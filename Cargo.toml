@@ -15,3 +15,7 @@ path = "src/lib.rs"
 chumsky = "0.12.0"
 clap = { version = "4.5.54", features = ["derive", "env"] }
 logos = "0.16.0"
+lsp-server = "0.7.9"
+lsp-types = "0.97.0"
+tree-sitter = "0.26.3"
+tree-sitter-nutrition = { path = "tree-sitter" }

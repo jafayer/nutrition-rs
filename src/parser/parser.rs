@@ -2,11 +2,6 @@ use chumsky::{prelude::*};
 
 use crate::{lexer::lexer::Token, ast::ast::*};
 
-
-fn skip_newlines<'a>() -> impl Parser<'a, &'a [Token], ()> + Clone {
-    just(Token::Newline).repeated().ignored()
-}
-
 // Inside brace-delimited blocks, allow both newlines and inline comments to be skipped.
 fn skip_block_ws<'a>() -> impl Parser<'a, &'a [Token], ()> + Clone {
     any()

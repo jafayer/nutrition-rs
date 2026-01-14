@@ -1,0 +1,42 @@
+{
+  "$schema": "https://tree-sitter.github.io/tree-sitter/assets/schemas/config.schema.json",
+  "grammars": [
+    {
+      "name": "nutrition",
+      "camelcase": "Nutrition",
+      "title": "Nutrition",
+      "scope": "source.nutrition",
+      "file-types": [
+        "nutrition"
+      ],
+      "injection-regex": "^nutrition$",
+      "class-name": "TreeSitterNutrition"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "A Nutrition spec tree-sitter grammar",
+    "authors": [
+      {
+        "name": "Josh Fayer",
+        "email": "dev@fayer.me",
+        "url": "https://joshfayer.com"
+      }
+    ],
+    "links": {
+      "repository": "https://github.com/jafayer/nutrition-rs",
+      "funding": ""
+    }
+  },
+  "bindings": {
+    "c": true,
+    "go": true,
+    "java": false,
+    "node": false,
+    "python": false,
+    "rust": true,
+    "swift": false,
+    "zig": false
+  }
+}

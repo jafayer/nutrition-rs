@@ -1,10 +1,9 @@
 use nutrition_rs::{ast, cli::*};
+use nutrition_rs::tree_sitter_ast::ast::parse;
+use nutrition_rs::tree_sitter_ast::semantic::SemanticAnalyzer;
 use clap::Parser;
 use std::fs;
-use nutrition_rs::parser::parser::parser;
-use nutrition_rs::lexer::lexer::Token;
-use logos::Logos;
-use chumsky::Parser as _ChumskyParser;
+
 
 #[derive(Parser, Debug)]
 #[command(name = "nutrition")]
@@ -27,19 +26,19 @@ fn main() {
         .expect("Failed to read input file");
     println!("Parsing file: {}", &cli.file);
 
-    let tokens: Vec<Token> = Token::lexer(&content).filter_map(Result::ok).collect();
-    println!("Lexed tokens: {:#?}", tokens);
-    let parse_result = parser().parse(tokens.as_slice()).into_result();
+    let mut analyzer = SemanticAnalyzer::new();
 
-    match parse_result {
-        Ok(ast) => {
-            println!("Parsed AST: {:#?}", ast);
+    let tree_sat = parse(&content).expect("Failed to parse input file with Tree-sitter");
+    let root_node = tree_sat.root_node();
+
+    let document = analyzer.analyze(root_node, &content).expect("Failed to analyze semantic AST");
+    println!("Semantic AST: {:#?}", document);
+
+    println!("Recipes:");
+    document.items.iter().for_each(|item| {
+        if let crate::ast::ast::Item::Recipe(recipe) = item {
+            let quantity = recipe.quantities.first().unwrap().amount;
+            println!("- {} ({} servings)", recipe.aliases.join(", "), quantity);
         }
-        Err(errors) => {
-            eprintln!("Parsing errors:");
-            for e in errors {
-                eprintln!("{:?}", e);
-            }
-        }
-    }
+    });
 }
