@@ -1,0 +1,75 @@
+{
+  "name": "nutrition-language",
+  "displayName": "Nutrition Language Support",
+  "description": "Language support for Nutrition files",
+  "version": "0.1.0",
+  "publisher": "nutrition",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:nutrition"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "nutrition",
+        "aliases": [
+          "Nutrition",
+          "nutrition"
+        ],
+        "extensions": [
+          ".nutrition"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "nutrition",
+        "scopeName": "source.nutrition",
+        "path": "./syntaxes/nutrition.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Nutrition Language Server",
+      "properties": {
+        "nutrition.lsp.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the nutrition-lsp executable. If empty, uses the bundled binary."
+        },
+        "nutrition.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Traces the communication between VS Code and the language server."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.75.0",
+    "@vscode/vsce": "^2.22.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}

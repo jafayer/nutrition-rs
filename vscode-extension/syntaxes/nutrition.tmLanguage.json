@@ -1,0 +1,61 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Nutrition",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    }
+  ],
+  "repository": {
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.nutrition",
+          "match": "\\b(ingredient|recipe|exercise|day|ate|exercised)\\b"
+        },
+        {
+          "name": "keyword.other.nutrition",
+          "match": "\\b(calories|protein|carbs|fat|fiber|servings|sets|reps|duration|weight)\\b"
+        }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.double.nutrition",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.nutrition",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "numbers": {
+      "name": "constant.numeric.nutrition",
+      "match": "\\b\\d+(\\.\\d+)?\\b"
+    },
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.nutrition",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.nutrition",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    }
+  },
+  "scopeName": "source.nutrition"
+}

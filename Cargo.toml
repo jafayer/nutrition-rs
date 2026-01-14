@@ -7,6 +7,10 @@ edition = "2024"
 name = "nutrition"
 path = "src/main.rs"
 
+[[bin]]
+name = "nutrition-lsp"
+path = "src/lsp/server.rs"
+
 [lib]
 name = "nutrition_rs"
 path = "src/lib.rs"
@@ -17,5 +21,7 @@ clap = { version = "4.5.54", features = ["derive", "env"] }
 logos = "0.16.0"
 lsp-server = "0.7.9"
 lsp-types = "0.97.0"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
 tree-sitter = "0.26.3"
 tree-sitter-nutrition = { path = "tree-sitter" }

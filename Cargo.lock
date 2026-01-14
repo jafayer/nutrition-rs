@@ -344,6 +344,8 @@ dependencies = [
  "logos",
  "lsp-server",
  "lsp-types",
+ "serde",
+ "serde_json",
  "tree-sitter",
  "tree-sitter-nutrition",
 ]
