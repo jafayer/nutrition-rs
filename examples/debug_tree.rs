@@ -21,7 +21,7 @@ fn main() {
     protein: 14.5g
 }"#;
 
-    if let Some(tree) = parse(source) {
+    if let Some(tree) = parse(source, None) {
         let root = tree.root_node();
         println!("Tree structure:");
         print_tree(root, source, 0);

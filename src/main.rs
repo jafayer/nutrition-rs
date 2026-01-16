@@ -1,8 +1,5 @@
-use nutrition_rs::{ast, cli::*};
-use nutrition_rs::tree_sitter_ast::ast::parse;
-use nutrition_rs::tree_sitter_ast::semantic::SemanticAnalyzer;
+use nutrition_rs::cli::{env, file_loader, generate};
 use clap::Parser;
-use std::fs;
 
 
 #[derive(Parser, Debug)]
@@ -17,28 +14,61 @@ pub struct Cli {
         required = true,
     )]
     pub file: String,
+
+    #[command(subcommand)]
+    pub command: Commands,
+
+
+}
+
+#[derive(clap::Subcommand, Debug)]
+pub enum Commands {
+    Validate {
+        #[arg(short, long, help = "Show the parse tree")]
+        show_tree: bool,
+    },
+
+    Generate {
+        #[command(subcommand)]
+        generate_command: generate::GenerateCommands,
+    }
+
+
 }
 
 fn main() {
     let cli = Cli::parse();
 
-    let content = fs::read_to_string(&cli.file)
-        .expect("Failed to read input file");
-    println!("Parsing file: {}", &cli.file);
-
-    let mut analyzer = SemanticAnalyzer::new();
-
-    let tree_sat = parse(&content).expect("Failed to parse input file with Tree-sitter");
-    let root_node = tree_sat.root_node();
-
-    let document = analyzer.analyze(root_node, &content).expect("Failed to analyze semantic AST");
-    println!("Semantic AST: {:#?}", document);
-
-    println!("Recipes:");
-    document.items.iter().for_each(|item| {
-        if let crate::ast::ast::Item::Recipe(recipe) = item {
-            let quantity = recipe.quantities.first().unwrap().amount;
-            println!("- {} ({} servings)", recipe.aliases.join(", "), quantity);
+    match cli.command {
+        Commands::Validate { show_tree } => {
+            file_loader::load_tree(Some(&cli.file))
+                .map(|document| {
+                    println!("File '{}' is valid.", cli.file);
+                    if show_tree {
+                        print_document(document);
+                    }
+                })
+                .unwrap_or_else(|err| {
+                    eprintln!("Validation failed for file '{}': {}", cli.file, err);
+                });
         }
-    });
+
+        Commands::Generate { generate_command } => {
+            match generate_command {
+                generate::GenerateCommands::Recipe(args) => {
+                    let output = args.emit();
+                    println!("{}", output);
+                }
+
+                generate::GenerateCommands::Ingredient(args) => {
+                    let output = args.emit();
+                    println!("{}", output);
+                }
+            }
+        }
+    }
+}
+
+fn print_document(node: nutrition_rs::ast::ast::Document) {
+    println!("{:#?}", node);
 }

@@ -16,7 +16,7 @@ fn test_parse_simple_ingredient() {
 }"#;
 
     let mut analyzer = SemanticAnalyzer::new();
-    if let Some(tree) = nutrition_rs::tree_sitter_ast::ast::parse(source) {
+    if let Some(tree) = nutrition_rs::tree_sitter_ast::ast::parse(source, None) {
         let root = tree.root_node();
         if let Ok(doc) = analyzer.analyze(root, source) {
             assert!(!doc.items.is_empty());
@@ -35,7 +35,7 @@ fn test_ingredient_with_aliases() {
 }"#;
 
     let mut analyzer = SemanticAnalyzer::new();
-    if let Some(tree) = nutrition_rs::tree_sitter_ast::ast::parse(source) {
+    if let Some(tree) = nutrition_rs::tree_sitter_ast::ast::parse(source, None) {
         let root = tree.root_node();
         if let Ok(_doc) = analyzer.analyze(root, source) {
             // All aliases should resolve to the same ingredient
@@ -76,7 +76,7 @@ fn test_recipe_ingredient_resolution() {
   protein: 14.5g
 }"#;
 
-    if let Some(tree) = nutrition_rs::tree_sitter_ast::ast::parse(ingredient_source) {
+    if let Some(tree) = nutrition_rs::tree_sitter_ast::ast::parse(ingredient_source, None) {
         let root = tree.root_node();
         let _ = analyzer.analyze(root, ingredient_source);
     }
@@ -92,7 +92,7 @@ fn test_day_parsing() {
 }"#;
 
     let mut analyzer = SemanticAnalyzer::new();
-    if let Some(tree) = nutrition_rs::tree_sitter_ast::ast::parse(source) {
+    if let Some(tree) = nutrition_rs::tree_sitter_ast::ast::parse(source, None) {
         let root = tree.root_node();
         if let Ok(doc) = analyzer.analyze(root, source) {
             let days = doc
@@ -111,7 +111,7 @@ fn test_complex_document_analysis() {
         .expect("Failed to read test.nutrition");
 
     let mut analyzer = SemanticAnalyzer::new();
-    if let Some(tree) = nutrition_rs::tree_sitter_ast::ast::parse(&source) {
+    if let Some(tree) = nutrition_rs::tree_sitter_ast::ast::parse(&source, None) {
         let root = tree.root_node();
         if let Ok(doc) = analyzer.analyze(root, &source) {
             // Count different item types

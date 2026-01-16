@@ -12,7 +12,7 @@ fn test_parse_example_file() {
     let source = fs::read_to_string("examples/test.nutrition")
         .expect("Failed to read test.nutrition file");
     
-    let tree = parse(&source).expect("Failed to parse test.nutrition");
+    let tree = parse(&source, None).expect("Failed to parse test.nutrition");
     let root = tree.root_node();
     
     assert!(!root.has_error(), "Parse tree should not contain errors");
@@ -25,7 +25,7 @@ fn test_parse_simple_ingredient() {
   calories: 50
 }"#;
     
-    let tree = parse(source).expect("Failed to parse ingredient");
+    let tree = parse(source, None).expect("Failed to parse ingredient");
     let root = tree.root_node();
     
     assert!(!root.has_error(), "Simple ingredient should parse without errors");
@@ -41,7 +41,7 @@ fn test_parse_ingredient_with_aliases() {
     fiber: 12.5g
 }"#;
     
-    let tree = parse(source).expect("Failed to parse ingredient with aliases");
+    let tree = parse(source, None).expect("Failed to parse ingredient with aliases");
     let root = tree.root_node();
     
     assert!(!root.has_error(), "Ingredient with aliases should parse without errors");
@@ -58,7 +58,7 @@ fn test_parse_ingredient_with_comments() {
     fiber: 12.5g // test comment
 } // test comment"#;
     
-    let tree = parse(source).expect("Failed to parse ingredient with comments");
+    let tree = parse(source, None).expect("Failed to parse ingredient with comments");
     let root = tree.root_node();
     
     assert!(!root.has_error(), "Ingredient with comments should parse without errors");
@@ -68,7 +68,7 @@ fn test_parse_ingredient_with_comments() {
 fn test_parse_empty_ingredient() {
     let source = r#"@ingredient(1 cup) "water" {}"#;
     
-    let tree = parse(source).expect("Failed to parse empty ingredient");
+    let tree = parse(source, None).expect("Failed to parse empty ingredient");
     let root = tree.root_node();
     
     assert!(!root.has_error(), "Empty ingredient should parse without errors");
@@ -81,7 +81,7 @@ fn test_parse_recipe() {
     "chickpeas"(200g)
 }"#;
     
-    let tree = parse(source).expect("Failed to parse recipe");
+    let tree = parse(source, None).expect("Failed to parse recipe");
     let root = tree.root_node();
     
     assert!(!root.has_error(), "Recipe should parse without errors");
@@ -91,7 +91,7 @@ fn test_parse_recipe() {
 fn test_parse_recipe_with_yield() {
     let source = r#"@recipe(8)(500g) "chickpea stew" { "chickpeas"(2 cups), "water"(5 cups) }"#;
     
-    let tree = parse(source).expect("Failed to parse recipe with yield");
+    let tree = parse(source, None).expect("Failed to parse recipe with yield");
     let root = tree.root_node();
     
     assert!(!root.has_error(), "Recipe with yield should parse without errors");
@@ -103,7 +103,7 @@ fn test_parse_recipe_with_fractional_amount() {
     "pizza"(0.5 pie)
 }"#;
     
-    let tree = parse(source).expect("Failed to parse recipe with fractional amount");
+    let tree = parse(source, None).expect("Failed to parse recipe with fractional amount");
     let root = tree.root_node();
     
     assert!(!root.has_error(), "Recipe with fractional amount should parse without errors");
@@ -115,7 +115,7 @@ fn test_parse_day_entry() {
     @ate "chickpea stew"(2)
 }"#;
     
-    let tree = parse(source).expect("Failed to parse day entry");
+    let tree = parse(source,None).expect("Failed to parse day entry");
     let root = tree.root_node();
     
     assert!(!root.has_error(), "Day entry should parse without errors");
@@ -128,7 +128,7 @@ fn test_parse_day_with_exercise() {
     @exercised "running"(30 minutes)
 }"#;
     
-    let tree = parse(source).expect("Failed to parse day with exercise");
+    let tree = parse(source, None).expect("Failed to parse day with exercise");
     let root = tree.root_node();
     
     assert!(!root.has_error(), "Day with exercise should parse without errors");
@@ -151,7 +151,7 @@ fn test_parse_multiple_entries() {
 }
 "#;
     
-    let tree = parse(source).expect("Failed to parse multiple entries");
+    let tree = parse(source, None).expect("Failed to parse multiple entries");
     let root = tree.root_node();
     
     assert!(!root.has_error(), "Multiple entries should parse without errors");
@@ -163,7 +163,7 @@ fn test_tree_structure() {
   calories: 50
 }"#;
     
-    let tree = parse(source).expect("Failed to parse");
+    let tree = parse(source, None).expect("Failed to parse");
     let root = tree.root_node();
     
     assert_eq!(root.kind(), "source_file");
@@ -175,7 +175,7 @@ fn test_parse_error_detection() {
     // Test with clearly invalid syntax
     let source = r#"this is not valid nutrition syntax"#;
     
-    let tree = parse(source).expect("Parser should return a tree even for invalid input");
+    let tree = parse(source, None).expect("Parser should return a tree even for invalid input");
     let root = tree.root_node();
     
     // Tree-sitter may or may not report errors depending on grammar implementation
@@ -199,7 +199,7 @@ fn test_parse_with_various_units() {
 }
 "#;
     
-    let tree = parse(source).expect("Failed to parse with various units");
+    let tree = parse(source, None).expect("Failed to parse with various units");
     let root = tree.root_node();
     
     assert!(!root.has_error(), "Various units should parse without errors");
@@ -209,7 +209,7 @@ fn test_parse_with_various_units() {
 fn test_empty_source() {
     let source = "";
     
-    let tree = parse(source).expect("Failed to parse empty source");
+    let tree = parse(source, None).expect("Failed to parse empty source");
     let root = tree.root_node();
     
     assert_eq!(root.kind(), "source_file");
@@ -220,7 +220,7 @@ fn test_comments_only() {
     let source = r#"// just a comment
 // another comment"#;
     
-    let tree = parse(source).expect("Failed to parse comments only");
+    let tree = parse(source, None).expect("Failed to parse comments only");
     let root = tree.root_node();
     
     assert!(!root.has_error(), "Comments only should parse without errors");
