@@ -64,6 +64,11 @@ fn main() {
                     let output = args.emit();
                     println!("{}", output);
                 }
+
+                generate::GenerateCommands::Day(args) => {
+                    let output = args.emit();
+                    println!("{}", output);
+                }
             }
         }
     }
