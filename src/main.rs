@@ -1,6 +1,7 @@
-use nutrition_rs::cli::{env, file_loader, generate};
 use clap::Parser;
-
+use nutrition_rs::cli::{env, file_loader, generate};
+use nutrition_rs::web_server::handler::run_server;
+use tokio;
 
 #[derive(Parser, Debug)]
 #[command(name = "nutrition")]
@@ -17,8 +18,6 @@ pub struct Cli {
 
     #[command(subcommand)]
     pub command: Commands,
-
-
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -31,12 +30,21 @@ pub enum Commands {
     Generate {
         #[command(subcommand)]
         generate_command: generate::GenerateCommands,
-    }
+    },
 
-
+    Serve {
+        #[arg(
+            short,
+            long,
+            help = "Port to run the server on",
+            default_value_t = 8080
+        )]
+        port: u16,
+    },
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cli = Cli::parse();
 
     match cli.command {
@@ -53,23 +61,24 @@ fn main() {
                 });
         }
 
-        Commands::Generate { generate_command } => {
-            match generate_command {
-                generate::GenerateCommands::Recipe(args) => {
-                    let output = args.emit();
-                    println!("{}", output);
-                }
-
-                generate::GenerateCommands::Ingredient(args) => {
-                    let output = args.emit();
-                    println!("{}", output);
-                }
-
-                generate::GenerateCommands::Day(args) => {
-                    let output = args.emit();
-                    println!("{}", output);
-                }
+        Commands::Generate { generate_command } => match generate_command {
+            generate::GenerateCommands::Recipe(args) => {
+                let output = args.emit();
+                println!("{}", output);
             }
+
+            generate::GenerateCommands::Ingredient(args) => {
+                let output = args.emit();
+                println!("{}", output);
+            }
+
+            generate::GenerateCommands::Day(args) => {
+                let output = args.emit();
+                println!("{}", output);
+            }
+        },
+        Commands::Serve { port } => {
+            run_server(port).await.unwrap();
         }
     }
 }
