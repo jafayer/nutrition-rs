@@ -6,25 +6,55 @@
       "include": "#comments"
     },
     {
+      "include": "#declarations"
+    },
+    {
       "include": "#keywords"
+    },
+    {
+      "include": "#quantities"
+    },
+    {
+      "include": "#property-assignment"
+    },
+    {
+      "include": "#number-with-unit"
+    },
+    {
+      "include": "#numbers"
     },
     {
       "include": "#strings"
     },
     {
-      "include": "#numbers"
+      "include": "#booleans"
+    },
+    {
+      "include": "#punctuation"
     }
   ],
   "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.nutrition",
+          "match": "//.*$"
+        }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "name": "keyword.declaration.nutrition",
+          "match": "@(unit|property|ingredient|food|recipe|exercise|day|ate|exercised)\\b"
+        }
+      ]
+    },
     "keywords": {
       "patterns": [
         {
-          "name": "keyword.control.nutrition",
-          "match": "\\b(ingredient|recipe|exercise|day|ate|exercised)\\b"
-        },
-        {
-          "name": "keyword.other.nutrition",
-          "match": "\\b(calories|protein|carbs|fat|fiber|servings|sets|reps|duration|weight)\\b"
+          "name": "keyword.other.type.nutrition",
+          "match": "\\b(Int|Float|Bool)\\b"
         }
       ]
     },
@@ -40,19 +70,87 @@
       ]
     },
     "numbers": {
-      "name": "constant.numeric.nutrition",
-      "match": "\\b\\d+(\\.\\d+)?\\b"
-    },
-    "comments": {
       "patterns": [
         {
-          "name": "comment.line.double-slash.nutrition",
-          "match": "//.*$"
+          "name": "constant.numeric.float.nutrition",
+          "match": "\\d+\\.\\d+|\\d+\\.|\\.\\d+"
         },
         {
-          "name": "comment.block.nutrition",
-          "begin": "/\\*",
-          "end": "\\*/"
+          "name": "constant.numeric.integer.nutrition",
+          "match": "\\d+"
+        }
+      ]
+    },
+    "booleans": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.nutrition",
+          "match": "\\b(true|false|True|False)\\b"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.bracket.round.nutrition",
+          "match": "[\\(\\)]"
+        },
+        {
+          "name": "punctuation.bracket.curly.nutrition",
+          "match": "[\\{\\}]"
+        },
+        {
+          "name": "punctuation.bracket.square.nutrition",
+          "match": "[\\[\\]]"
+        },
+        {
+          "name": "punctuation.separator.nutrition",
+          "match": "[,:]"
+        },
+        {
+          "name": "punctuation.operator.assignment.nutrition",
+          "match": "="
+        }
+      ]
+    },
+    "quantities": {
+      "patterns": [
+        {
+          "name": "meta.quantity.nutrition",
+          "begin": "\\(",
+          "end": "\\)",
+          "patterns": [
+            {
+              "include": "#numbers"
+            },
+            {
+              "name": "keyword.other.unit.nutrition",
+              "match": "[A-Za-z_][A-Za-z0-9_\\-]*"
+            }
+          ]
+        }
+      ]
+    },
+    "property-assignment": {
+      "patterns": [
+        {
+          "name": "support.type.property-name.nutrition",
+          "match": "[A-Za-z_][A-Za-z0-9_\\-]*(?=\\s*:)"
+        }
+      ]
+    },
+    "number-with-unit": {
+      "patterns": [
+        {
+          "match": "(\\d+(?:\\.\\d+)?|\\.\\d+)([A-Za-z_][A-Za-z0-9_\\-]*)",
+          "captures": {
+            "1": {
+              "name": "constant.numeric.nutrition"
+            },
+            "2": {
+              "name": "keyword.other.unit.nutrition"
+            }
+          }
         }
       ]
     }

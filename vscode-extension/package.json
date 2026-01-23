@@ -15,6 +15,28 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "commands": [
+      {
+        "command": "nutrition.findIngredient",
+        "title": "Nutrition: Find Ingredient"
+      },
+      {
+        "command": "nutrition.findFood",
+        "title": "Nutrition: Find Food"
+      },
+      {
+        "command": "nutrition.findRecipe",
+        "title": "Nutrition: Find Recipe"
+      },
+      {
+        "command": "nutrition.findDay",
+        "title": "Nutrition: Find Day"
+      },
+      {
+        "command": "nutrition.today",
+        "title": "Nutrition: Today"
+      }
+    ],
     "languages": [
       {
         "id": "nutrition",
@@ -34,28 +56,7 @@
         "scopeName": "source.nutrition",
         "path": "./syntaxes/nutrition.tmLanguage.json"
       }
-    ],
-    "configuration": {
-      "type": "object",
-      "title": "Nutrition Language Server",
-      "properties": {
-        "nutrition.lsp.path": {
-          "type": "string",
-          "default": "",
-          "description": "Path to the nutrition-lsp executable. If empty, uses the bundled binary."
-        },
-        "nutrition.trace.server": {
-          "type": "string",
-          "enum": [
-            "off",
-            "messages",
-            "verbose"
-          ],
-          "default": "off",
-          "description": "Traces the communication between VS Code and the language server."
-        }
-      }
-    }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
@@ -64,12 +65,8 @@
     "package": "vsce package"
   },
   "devDependencies": {
-    "@types/node": "^18.0.0",
     "@types/vscode": "^1.75.0",
     "@vscode/vsce": "^2.22.0",
     "typescript": "^5.3.0"
-  },
-  "dependencies": {
-    "vscode-languageclient": "^9.0.1"
   }
 }
