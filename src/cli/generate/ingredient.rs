@@ -1,4 +1,4 @@
-use crate::emitters::emitter::CanEmit;
+use crate::emitters::emitter::{CanEmit, CanEmitAI};
 use crate::emitters::ingredient::IngredientEmitter;
 use crate::ast::ast::{Ingredient, Quantity, Property};
 use clap::Parser;
@@ -19,6 +19,8 @@ pub struct IngredientGenerateArgs {
     pub aliases: Vec<String>,
     #[clap(short = 'p', long = "property", help = "Properties for the recipe in the format 'label:quantity'")]
     pub properties: Vec<String>,
+    #[clap(long = "ai", help = "Use AI to generate ingredient details")]
+    pub ai: bool,
 }
 
 impl IngredientGenerateArgs {
@@ -41,9 +43,19 @@ impl IngredientGenerateArgs {
         }
     }
 
-    pub fn emit(&self) -> String {
+    pub async fn emit(&self) -> String {
         let ingredient = self.to_ingredient();
         let emitter = IngredientEmitter;
-        emitter.emit(&ingredient)
+
+        let processed_ingredient = if self.ai {
+            match emitter.emit_ai(&ingredient).await {
+                Ok(ai_ingredient) => ai_ingredient,
+                Err(err) => return format!("AI emission failed: {}", err),
+            }
+        } else {
+            ingredient
+        };
+
+        emitter.emit(&processed_ingredient)
     }
 }

@@ -64,17 +64,17 @@ async fn main() {
         Commands::Generate { generate_command } => match generate_command {
             generate::GenerateCommands::Recipe(args) => {
                 let output = args.emit();
-                println!("{}", output);
+                println!("\n{}", output);
             }
 
             generate::GenerateCommands::Ingredient(args) => {
                 let output = args.emit();
-                println!("{}", output);
+                println!("\n{}", output.await);
             }
 
             generate::GenerateCommands::Day(args) => {
                 let output = args.emit();
-                println!("{}", output);
+                println!("\n{}", output);
             }
         },
         Commands::Serve { port } => {

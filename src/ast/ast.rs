@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use schemars::JsonSchema;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Document {
@@ -25,7 +26,7 @@ pub enum Item {
  * For example, "100g" would have amount 100 and unit "g".
  * There is an optional space between amount and unit in the string representation.
  */
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Quantity {
     pub amount: f64,
     pub unit: Option<String>,
@@ -92,7 +93,7 @@ impl Quantity {
  * Property represents a named property with a quantity value.
  * For example, "calories: 200kcal" would have name "calories" and value Quantity { amount: 200, unit: Some("kcal") }.
  */
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Property {
     pub name: String,
     pub value: Quantity,
@@ -132,7 +133,7 @@ impl Property {
  * properties.
  * For example, an ingredient could be "@ingredient(100g) "sugar" { calories: 387kcal }".
  */
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Ingredient {
     pub aliases: Vec<String>,
     pub quantities: Vec<Quantity>,
