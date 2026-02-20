@@ -438,6 +438,13 @@ impl SemanticAnalyzer {
                         name = source[child.start_byte()..child.end_byte()].to_string();
                     }
                 }
+                // The grammar uses a `value` node wrapping `number_with_unit`.
+                "value" => {
+                    if let Ok(qty) = self.parse_value(child, source) {
+                        value = qty;
+                    }
+                }
+                // Legacy fallback kept for any grammar variants that emit `quantity` directly.
                 "quantity" => {
                     if let Ok(qty) = self.parse_quantity(child, source) {
                         value = qty;
@@ -452,6 +459,45 @@ impl SemanticAnalyzer {
         }
 
         Ok(Property { name, value })
+    }
+
+    /// Parse a `value` node (grammar rule: `value: number_with_unit | bool | string`).
+    fn parse_value(&self, node: Node, source: &str) -> Result<Quantity, String> {
+        for child in node.children(&mut node.walk()) {
+            if child.kind() == "number_with_unit" {
+                return self.parse_number_with_unit(child, source);
+            }
+        }
+        // Fallback: try to parse the raw text.
+        self.parse_quantity(node, source)
+    }
+
+    /// Parse a `number_with_unit` node (grammar rule: `seq(number, optional(unit_token))`).
+    fn parse_number_with_unit(&self, node: Node, source: &str) -> Result<Quantity, String> {
+        let mut amount = 0.0;
+        let mut unit: Option<String> = None;
+
+        for child in node.children(&mut node.walk()) {
+            match child.kind() {
+                "number" => {
+                    let text = source[child.start_byte()..child.end_byte()].trim();
+                    if let Ok(num) = text.parse::<f64>() {
+                        amount = num;
+                    }
+                }
+                "unit_token" => {
+                    // unit_token is a string or identifier
+                    for unit_child in child.children(&mut child.walk()) {
+                        if unit_child.kind() == "identifier" || unit_child.kind() == "string" {
+                            unit = Some(self.extract_string_value(unit_child, source));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Ok(Quantity { amount, unit })
     }
 
     fn extract_string_value(&self, node: Node, source: &str) -> String {

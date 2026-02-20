@@ -1,6 +1,8 @@
 use clap::Parser;
 use nutrition_rs::cli::{env, file_loader, generate};
 use nutrition_rs::web_server::handler::run_server;
+use nutrition_rs::nutrition::query_nutrition;
+use nutrition_rs::ast::ast::Quantity;
 use tokio;
 
 #[derive(Parser, Debug)]
@@ -41,6 +43,19 @@ pub enum Commands {
         )]
         port: u16,
     },
+
+    /// Display nutritional data for a named ingredient or recipe.
+    Query {
+        #[arg(short, long, help = "Name or alias of the ingredient or recipe to query")]
+        name: String,
+
+        #[arg(
+            short,
+            long,
+            help = "Quantity to scale the result to (e.g. '200g', '2 servings')"
+        )]
+        quantity: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -79,6 +94,33 @@ async fn main() {
         },
         Commands::Serve { port } => {
             run_server(port).await.unwrap();
+        }
+
+        Commands::Query { name, quantity } => {
+            let document = match file_loader::load_tree(Some(&cli.file)) {
+                Ok(doc) => doc,
+                Err(err) => {
+                    eprintln!("Failed to load file '{}': {}", cli.file, err);
+                    std::process::exit(1);
+                }
+            };
+
+            let requested_quantity = quantity
+                .as_deref()
+                .map(|q| Quantity::from_string(q))
+                .transpose()
+                .unwrap_or_else(|err| {
+                    eprintln!("Invalid quantity '{}': {}", quantity.as_deref().unwrap_or(""), err);
+                    std::process::exit(1);
+                });
+
+            match query_nutrition(&document, &name, requested_quantity.as_ref()) {
+                Ok(report) => println!("{}", report.to_json()),
+                Err(err) => {
+                    eprintln!("Query failed: {}", err);
+                    std::process::exit(1);
+                }
+            }
         }
     }
 }
