@@ -34,6 +34,7 @@ serde_json = "1.0.149"
 tokio = { version = "1.49.0", features= ["macros", "rt-multi-thread"]}
 tree-sitter = "0.26.3"
 tree-sitter-nutrition = { path = "tree-sitter" }
+duckdb = { version = "1.4.4", features = ["bundled"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }

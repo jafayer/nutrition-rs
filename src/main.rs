@@ -2,6 +2,7 @@ use clap::Parser;
 use nutrition_rs::cli::{env, file_loader, generate};
 use nutrition_rs::web_server::handler::run_server;
 use nutrition_rs::nutrition::query_nutrition;
+use nutrition_rs::sql::run_sql_query;
 use nutrition_rs::ast::ast::Quantity;
 use tokio;
 
@@ -55,6 +56,12 @@ pub enum Commands {
             help = "Quantity to scale the result to (e.g. '200g', '2 servings')"
         )]
         quantity: Option<String>,
+    },
+
+    /// Run a SQL query against the nutrition database.
+    Sql {
+        #[arg(short = 'e', long, help = "SQL statement to execute")]
+        execute: String,
     },
 }
 
@@ -118,6 +125,24 @@ async fn main() {
                 Ok(report) => println!("{}", report.to_json()),
                 Err(err) => {
                     eprintln!("Query failed: {}", err);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        Commands::Sql { execute } => {
+            let document = match file_loader::load_tree(Some(&cli.file)) {
+                Ok(doc) => doc,
+                Err(err) => {
+                    eprintln!("Failed to load file '{}': {}", cli.file, err);
+                    std::process::exit(1);
+                }
+            };
+
+            match run_sql_query(&document, &execute) {
+                Ok(result) => print!("{}", result),
+                Err(err) => {
+                    eprintln!("SQL error: {}", err);
                     std::process::exit(1);
                 }
             }
