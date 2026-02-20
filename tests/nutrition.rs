@@ -2,7 +2,7 @@
 
 use nutrition_rs::ast::ast::{Ate, Day, DayItem, Document, Exercise, Exercised, Ingredient, IngredientLabel, Item, Property, Quantity, Recipe};
 use nutrition_rs::nutrition::{
-    compute_daily_report, compute_ingredient_nutrition, compute_recipe_nutrition,
+    aggregate_reports, compute_daily_report, compute_ingredient_nutrition, compute_recipe_nutrition,
     compute_report, query_nutrition,
 };
 
@@ -69,6 +69,35 @@ fn scale_ingredient_cross_unit_via_equivalency() {
     let report = compute_ingredient_nutrition(&ing, Some(&req));
 
     assert!((report.properties[0].value.amount - 538.0).abs() < 1e-6);
+}
+
+#[test]
+fn unitless_calories_in_ingredient_are_normalised_to_kcal() {
+    // Ingredients commonly declare `calories: 269` with no unit.
+    // After the fix, query output should show the kcal unit.
+    let ing = Ingredient {
+        aliases: vec!["chickpeas".to_string()],
+        quantities: vec![Quantity { amount: 100.0, unit: Some("g".to_string()) }],
+        properties: vec![
+            Property {
+                name: "calories".to_string(),
+                value: Quantity { amount: 269.0, unit: None }, // ← no unit
+            },
+            Property {
+                name: "protein".to_string(),
+                value: Quantity { amount: 14.5, unit: None }, // ← no unit; should become g
+            },
+        ],
+    };
+
+    let report = compute_ingredient_nutrition(&ing, None);
+
+    let cal = report.properties.iter().find(|p| p.name == "calories").unwrap();
+    assert_eq!(cal.value.unit.as_deref(), Some("kcal"), "calories should be normalised to kcal");
+    assert!((cal.value.amount - 269.0).abs() < 1e-6);
+
+    let prot = report.properties.iter().find(|p| p.name == "protein").unwrap();
+    assert_eq!(prot.value.unit.as_deref(), Some("g"), "protein should be normalised to g");
 }
 
 // ---------------------------------------------------------------------------
@@ -364,4 +393,154 @@ fn daily_report_unknown_food_skipped_gracefully() {
     let report = compute_daily_report(&doc, &day);
     assert!(report.intake.is_empty());
     assert!(report.exercise.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// Unit normalisation (unitless vs explicit-unit properties)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn unitless_calories_and_kcal_exercise_produce_consistent_units() {
+    // Ingredients often declare `calories: 269` (no unit) while exercises
+    // use `calories: 300kcal`.  After the fix, both should be treated as kcal
+    // and the net should correctly reflect the arithmetic — with a kcal unit.
+    let ing = Ingredient {
+        aliases: vec!["oats".to_string()],
+        quantities: vec![Quantity { amount: 100.0, unit: Some("g".to_string()) }],
+        properties: vec![Property {
+            name: "calories".to_string(),
+            value: Quantity { amount: 300.0, unit: None }, // ← no unit
+        }],
+    };
+    let ex = make_exercise("run", 30.0, "min", vec![("calories", 200.0, Some("kcal"))]);
+    let day = Day {
+        date: "2026-05-01".to_string(),
+        items: vec![
+            DayItem::Ate(Ate {
+                food_alias: "oats".to_string(),
+                quantity: Quantity { amount: 100.0, unit: Some("g".to_string()) },
+            }),
+            DayItem::Exercised(Exercised {
+                exercise_alias: "run".to_string(),
+                quantity: Quantity { amount: 30.0, unit: Some("min".to_string()) },
+            }),
+        ],
+    };
+    let doc = make_document(vec![
+        Item::Ingredient(ing),
+        Item::Exercise(ex),
+        Item::Day(day.clone()),
+    ]);
+    let report = compute_daily_report(&doc, &day);
+
+    let intake_cal = report.intake.iter().find(|p| p.name == "calories").unwrap();
+    // Unit should be normalised to kcal even though source had no unit.
+    assert_eq!(intake_cal.value.unit.as_deref(), Some("kcal"));
+    assert!((intake_cal.value.amount - 300.0).abs() < 1e-6);
+
+    let ex_cal = report.exercise.iter().find(|p| p.name == "calories").unwrap();
+    assert_eq!(ex_cal.value.unit.as_deref(), Some("kcal"));
+
+    let net_cal = report.net.iter().find(|p| p.name == "calories").unwrap();
+    // Net should also carry the kcal unit.
+    assert_eq!(net_cal.value.unit.as_deref(), Some("kcal"));
+    // 300 - 200 = 100 kcal
+    assert!((net_cal.value.amount - 100.0).abs() < 1e-6);
+}
+
+// ---------------------------------------------------------------------------
+// aggregate_reports
+// ---------------------------------------------------------------------------
+
+#[test]
+fn aggregate_reports_averages_properties_across_days() {
+    // Two days: 200 kcal on day 1, 400 kcal on day 2 → average 300 kcal.
+    let ing = make_ingredient("apple", 1.0, "unit", vec![("calories", 200.0, Some("kcal"))]);
+    let day1 = Day {
+        date: "2026-01-01".to_string(),
+        items: vec![DayItem::Ate(Ate {
+            food_alias: "apple".to_string(),
+            quantity: Quantity { amount: 1.0, unit: Some("unit".to_string()) },
+        })],
+    };
+    let day2 = Day {
+        date: "2026-01-02".to_string(),
+        items: vec![DayItem::Ate(Ate {
+            food_alias: "apple".to_string(),
+            quantity: Quantity { amount: 2.0, unit: Some("unit".to_string()) },
+        })],
+    };
+    let doc = make_document(vec![
+        Item::Ingredient(ing),
+        Item::Day(day1),
+        Item::Day(day2),
+    ]);
+
+    let reports = compute_report(&doc, Some("2026-01-01"), Some("2026-01-02"));
+    assert_eq!(reports.len(), 2);
+
+    let agg = aggregate_reports(&reports, "2026-01-01", "2026-01-02");
+    assert_eq!(agg.start, "2026-01-01");
+    assert_eq!(agg.end, "2026-01-02");
+    assert_eq!(agg.days, 2);
+
+    let cal = agg.intake.iter().find(|p| p.name == "calories").unwrap();
+    // 200 + 400 = 600; 600 / 2 = 300
+    assert!((cal.value.amount - 300.0).abs() < 1e-6);
+}
+
+#[test]
+fn aggregate_reports_single_day_returns_same_values() {
+    let ing = make_ingredient("rice", 100.0, "g", vec![("calories", 130.0, Some("kcal"))]);
+    let day = Day {
+        date: "2026-03-01".to_string(),
+        items: vec![DayItem::Ate(Ate {
+            food_alias: "rice".to_string(),
+            quantity: Quantity { amount: 100.0, unit: Some("g".to_string()) },
+        })],
+    };
+    let doc = make_document(vec![Item::Ingredient(ing), Item::Day(day)]);
+    let reports = compute_report(&doc, Some("2026-03-01"), Some("2026-03-01"));
+    assert_eq!(reports.len(), 1);
+
+    let agg = aggregate_reports(&reports, "2026-03-01", "2026-03-01");
+    assert_eq!(agg.days, 1);
+    let cal = agg.intake.iter().find(|p| p.name == "calories").unwrap();
+    // Single day – average equals the day's value.
+    assert!((cal.value.amount - 130.0).abs() < 1e-6);
+}
+
+#[test]
+fn aggregate_reports_subtracts_exercise_in_net() {
+    // eat 300 kcal, burn 100 kcal/day × 2 days → net avg = 200 kcal
+    let ing = make_ingredient("rice", 100.0, "g", vec![("calories", 300.0, Some("kcal"))]);
+    let ex = make_exercise("cycling", 30.0, "min", vec![("calories", 100.0, Some("kcal"))]);
+    let make_day = |date: &str| Day {
+        date: date.to_string(),
+        items: vec![
+            DayItem::Ate(Ate {
+                food_alias: "rice".to_string(),
+                quantity: Quantity { amount: 100.0, unit: Some("g".to_string()) },
+            }),
+            DayItem::Exercised(Exercised {
+                exercise_alias: "cycling".to_string(),
+                quantity: Quantity { amount: 30.0, unit: Some("min".to_string()) },
+            }),
+        ],
+    };
+    let day1 = make_day("2026-04-01");
+    let day2 = make_day("2026-04-02");
+    let doc = make_document(vec![
+        Item::Ingredient(ing),
+        Item::Exercise(ex),
+        Item::Day(day1),
+        Item::Day(day2),
+    ]);
+
+    let reports = compute_report(&doc, Some("2026-04-01"), Some("2026-04-02"));
+    let agg = aggregate_reports(&reports, "2026-04-01", "2026-04-02");
+
+    let net_cal = agg.net.iter().find(|p| p.name == "calories").unwrap();
+    // Each day: 300 - 100 = 200; average = 200
+    assert!((net_cal.value.amount - 200.0).abs() < 1e-6);
 }

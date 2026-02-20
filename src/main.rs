@@ -1,7 +1,8 @@
 use clap::Parser;
 use nutrition_rs::cli::{env, file_loader, generate};
 use nutrition_rs::web_server::handler::run_server;
-use nutrition_rs::nutrition::{query_nutrition, compute_report};
+use nutrition_rs::nutrition::{query_nutrition, compute_report, aggregate_reports};
+use nutrition_rs::display::{format_nutrition_report, format_daily_report, format_aggregated_report};
 use nutrition_rs::ast::ast::Quantity;
 use tokio;
 
@@ -14,9 +15,9 @@ pub struct Cli {
         long,
         help = "Path to input file to parse (or set via env: NUTRITION_DEFAULT_FILE)",
         env = env::DEFAULT_FILE_ENV_VAR,
-        required = true,
+        global = true
     )]
-    pub file: String,
+    pub file: Option<String>,
 
     #[command(subcommand)]
     pub command: Commands,
@@ -55,19 +56,22 @@ pub enum Commands {
             help = "Quantity to scale the result to (e.g. '200g', '2 servings')"
         )]
         quantity: Option<String>,
+
+        #[arg(long, help = "Output raw JSON instead of the nutrition-label display")]
+        json: bool,
     },
 
     /// Compute daily nutrition reports from @day blocks.
     Report {
         #[arg(
             long,
-            help = "Start date filter, inclusive (e.g. '2026-01-01')"
+            help = "Start date filter, inclusive (e.g. '2026-01-01'). Defaults to today."
         )]
         start: Option<String>,
 
         #[arg(
             long,
-            help = "End date filter, inclusive (e.g. '2026-01-31' or 'today')"
+            help = "End date filter, inclusive (e.g. '2026-01-31' or 'today'). Defaults to today."
         )]
         end: Option<String>,
 
@@ -77,6 +81,15 @@ pub enum Commands {
             default_value_t = false
         )]
         ate_only: bool,
+
+        #[arg(
+            long,
+            help = "Show each day individually instead of aggregating over the date range"
+        )]
+        no_aggregate: bool,
+
+        #[arg(long, help = "Output raw JSON instead of the nutrition-label display")]
+        json: bool,
     },
 }
 
@@ -86,15 +99,16 @@ async fn main() {
 
     match cli.command {
         Commands::Validate { show_tree } => {
-            file_loader::load_tree(Some(&cli.file))
+            let file = require_file(&cli.file);
+            file_loader::load_tree(Some(&file))
                 .map(|document| {
-                    println!("File '{}' is valid.", cli.file);
+                    println!("File '{}' is valid.", file);
                     if show_tree {
                         print_document(document);
                     }
                 })
                 .unwrap_or_else(|err| {
-                    eprintln!("Validation failed for file '{}': {}", cli.file, err);
+                    eprintln!("Validation failed for file '{}': {}", file, err);
                 });
         }
 
@@ -118,11 +132,12 @@ async fn main() {
             run_server(port).await.unwrap();
         }
 
-        Commands::Query { name, quantity } => {
-            let document = match file_loader::load_tree(Some(&cli.file)) {
+        Commands::Query { name, quantity, json } => {
+            let file = require_file(&cli.file);
+            let document = match file_loader::load_tree(Some(&file)) {
                 Ok(doc) => doc,
                 Err(err) => {
-                    eprintln!("Failed to load file '{}': {}", cli.file, err);
+                    eprintln!("Failed to load file '{}': {}", file, err);
                     std::process::exit(1);
                 }
             };
@@ -137,7 +152,13 @@ async fn main() {
                 });
 
             match query_nutrition(&document, &name, requested_quantity.as_ref()) {
-                Ok(report) => println!("{}", report.to_json()),
+                Ok(report) => {
+                    if json {
+                        println!("{}", report.to_json());
+                    } else {
+                        println!("{}", format_nutrition_report(&report));
+                    }
+                }
                 Err(err) => {
                     eprintln!("Query failed: {}", err);
                     std::process::exit(1);
@@ -145,34 +166,90 @@ async fn main() {
             }
         }
 
-        Commands::Report { start, end, ate_only } => {
-            let document = match file_loader::load_tree(Some(&cli.file)) {
+        Commands::Report { start, end, ate_only, no_aggregate, json } => {
+            let file = require_file(&cli.file);
+            let document = match file_loader::load_tree(Some(&file)) {
                 Ok(doc) => doc,
                 Err(err) => {
-                    eprintln!("Failed to load file '{}': {}", cli.file, err);
+                    eprintln!("Failed to load file '{}': {}", file, err);
                     std::process::exit(1);
                 }
             };
 
             // Resolve "today" alias to the current date (YYYY-MM-DD).
+            // Both start and end default to today when not provided.
             let today = current_date_iso8601();
-            let start_str = start.as_deref();
-            let end_resolved = end.as_deref().map(|e| if e == "today" { today.as_str() } else { e });
+            let start_resolved = start
+                .as_deref()
+                .map(|s| if s == "today" { today.as_str() } else { s })
+                .unwrap_or(today.as_str());
+            let end_resolved = end
+                .as_deref()
+                .map(|e| if e == "today" { today.as_str() } else { e })
+                .unwrap_or(today.as_str());
 
-            let reports = compute_report(&document, start_str, end_resolved);
+            let reports = compute_report(&document, Some(start_resolved), Some(end_resolved));
 
             if reports.is_empty() {
                 println!("No @day entries found in the specified range.");
-            } else {
-                for report in &reports {
+                return;
+            }
+
+            // Aggregate when the range spans more than one date and --no-aggregate
+            // was not requested.
+            let is_range = start_resolved != end_resolved;
+            let use_aggregate = is_range && !no_aggregate;
+
+            if use_aggregate {
+                let agg = aggregate_reports(&reports, start_resolved, end_resolved);
+                if json {
                     if ate_only {
                         let output = serde_json::json!({
-                            "date": report.date,
-                            "intake": report.intake,
+                            "start": agg.start,
+                            "end": agg.end,
+                            "days": agg.days,
+                            "intake": agg.intake,
                         });
                         println!("{}", serde_json::to_string_pretty(&output).unwrap_or_default());
                     } else {
-                        println!("{}", report.to_json());
+                        println!("{}", agg.to_json());
+                    }
+                } else if ate_only {
+                    use nutrition_rs::nutrition::NutritionReport;
+                    use nutrition_rs::ast::ast::Quantity;
+                    let label = format!("{} \u{2013} {}", agg.start, agg.end);
+                    let intake_report = NutritionReport {
+                        name: label,
+                        quantity: Quantity { amount: agg.days as f64, unit: Some("days".to_string()) },
+                        properties: agg.intake,
+                    };
+                    println!("{}", format_nutrition_report(&intake_report));
+                } else {
+                    println!("{}", format_aggregated_report(&agg));
+                }
+            } else {
+                for report in &reports {
+                    if json {
+                        if ate_only {
+                            let output = serde_json::json!({
+                                "date": report.date,
+                                "intake": report.intake,
+                            });
+                            println!("{}", serde_json::to_string_pretty(&output).unwrap_or_default());
+                        } else {
+                            println!("{}", report.to_json());
+                        }
+                    } else if ate_only {
+                        use nutrition_rs::nutrition::NutritionReport;
+                        use nutrition_rs::ast::ast::Quantity;
+                        let intake_report = NutritionReport {
+                            name: report.date.clone(),
+                            quantity: Quantity { amount: 1.0, unit: Some("day".to_string()) },
+                            properties: report.intake.clone(),
+                        };
+                        println!("{}", format_nutrition_report(&intake_report));
+                    } else {
+                        println!("{}", format_daily_report(report));
                     }
                 }
             }
@@ -209,6 +286,16 @@ fn current_date_iso8601() -> String {
     let y = if m <= 2 { y + 1 } else { y };
 
     format!("{:04}-{:02}-{:02}", y, m, d)
+}
+
+fn require_file(file: &Option<String>) -> String {
+    file.clone().unwrap_or_else(|| {
+        eprintln!(
+            "Missing required argument: --file <FILE> (or set {})",
+            env::DEFAULT_FILE_ENV_VAR
+        );
+        std::process::exit(1);
+    })
 }
 
 fn print_document(node: nutrition_rs::ast::ast::Document) {

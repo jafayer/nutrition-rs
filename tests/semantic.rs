@@ -52,10 +52,7 @@ fn test_ingredient_with_aliases() {
 
 #[test]
 fn test_quantity_parsing() {
-    let analyzer = SemanticAnalyzer::new();
-
     // Create a simple quantity node and parse it
-    let source = "100g";
 
     let quantity = Quantity {
         amount: 100.0,
@@ -138,8 +135,8 @@ fn test_complex_document_analysis() {
 }
 
 #[test]
+#[cfg(test)]
 fn test_quantity_with_spaces() {
-    let analyzer = SemanticAnalyzer::new();
 
     let doc = Document {
         items: vec![Item::Ingredient(Ingredient {
@@ -160,8 +157,8 @@ fn test_quantity_with_spaces() {
 }
 
 #[test]
+#[cfg(test)]
 fn test_fractional_quantities() {
-    let analyzer = SemanticAnalyzer::new();
 
     let doc = Document {
         items: vec![Item::Ingredient(Ingredient {

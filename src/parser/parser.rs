@@ -73,7 +73,6 @@ fn parse_ingredient_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
                 )
                 .then_ignore(skip_block_ws())
                 .then_ignore(just(Token::RBrace))
-                .then_ignore(skip_block_ws())
         )
         .map(|((quantities, aliases), properties)| {
             Item::Ingredient(Ingredient {
@@ -109,7 +108,6 @@ fn parse_recipe_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
                 )
                 .then_ignore(skip_block_ws())
                 .then_ignore(just(Token::RBrace))
-                .then_ignore(skip_block_ws())
         )
         .map(|((quantities, aliases), ingredients)| {
             Item::Recipe(Recipe {
@@ -164,7 +162,6 @@ fn parse_day_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
                 )
                 .then_ignore(skip_block_ws())
                 .then_ignore(just(Token::RBrace))
-                .then_ignore(skip_block_ws())
         )
         .map(|(date, items)| {
             Item::Day(Day { date, items })
@@ -193,7 +190,6 @@ fn parse_exercise_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
                 )
                 .then_ignore(skip_block_ws())
                 .then_ignore(just(Token::RBrace))
-                .then_ignore(skip_block_ws())
         )
         .map(|((quantities, aliases), properties)| {
             Item::Exercise(Exercise {
@@ -217,9 +213,11 @@ fn parse_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
 }
 
 pub fn parser<'a>() -> impl Parser<'a, &'a [Token], Document> + Clone {
-    // Top-level items can be separated by newlines and inline comments
+    // Top-level items can be separated by one or more newlines and inline comments
     let top_sep = any()
         .filter(|tok| matches!(tok, Token::Newline | Token::Comment(_)))
+        .repeated()
+        .at_least(1)
         .ignored();
 
     parse_item()

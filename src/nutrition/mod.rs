@@ -5,7 +5,7 @@
 //! unit registry.
 
 use crate::ast::ast::{Day, DayItem, Document, Exercise, Ingredient, Item, Property, Quantity, Recipe};
-use nutrition_units::{NutritionQuantity, UnitRegistry};
+use nutrition_units::{default_unit_for_property, NutritionQuantity, UnitRegistry};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -59,6 +59,22 @@ impl DailyNutritionReport {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/// Return the effective unit string for a property value.
+///
+/// If the declared unit is non-empty it is returned as-is.  Otherwise the
+/// canonical default for the property name is used (e.g. `"calories"` →
+/// `"kcal"`, `"protein"` → `"g"`).  This normalises unitless declarations
+/// like `calories: 269` so they are compatible with explicit-unit declarations
+/// like `calories: 300kcal` in arithmetic operations.
+fn resolve_unit(prop_name: &str, declared_unit: Option<&str>) -> String {
+    match declared_unit {
+        Some(u) if !u.is_empty() => u.to_string(),
+        _ => default_unit_for_property(prop_name)
+            .unwrap_or("")
+            .to_string(),
+    }
+}
+
 /// Scale every property in `properties` by `scale`.
 fn scale_properties(properties: &[Property], scale: f64) -> Vec<Property> {
     properties
@@ -67,7 +83,10 @@ fn scale_properties(properties: &[Property], scale: f64) -> Vec<Property> {
             name: prop.name.clone(),
             value: Quantity {
                 amount: prop.value.amount * scale,
-                unit: prop.value.unit.clone(),
+                unit: {
+                    let u = resolve_unit(&prop.name, prop.value.unit.as_deref());
+                    if u.is_empty() { None } else { Some(u) }
+                },
             },
         })
         .collect()
@@ -84,7 +103,7 @@ fn sum_properties(all_properties: Vec<Vec<Property>>) -> Vec<Property> {
 
     for properties in all_properties {
         for prop in properties {
-            let unit = prop.value.unit.clone().unwrap_or_default();
+            let unit = resolve_unit(&prop.name, prop.value.unit.as_deref());
             let nq = NutritionQuantity::new(prop.value.amount, unit);
 
             match totals.get(&prop.name) {
@@ -174,14 +193,14 @@ fn subtract_properties(intake: &[Property], exercise: &[Property]) -> Vec<Proper
 
     // Seed with intake values.
     for prop in intake {
-        let unit = prop.value.unit.clone().unwrap_or_default();
+        let unit = resolve_unit(&prop.name, prop.value.unit.as_deref());
         let nq = NutritionQuantity::new(prop.value.amount, unit);
         result.insert(prop.name.clone(), nq);
     }
 
     // Subtract exercise values.
     for prop in exercise {
-        let unit = prop.value.unit.clone().unwrap_or_default();
+        let unit = resolve_unit(&prop.name, prop.value.unit.as_deref());
         let nq = NutritionQuantity::new(prop.value.amount, &unit);
         match result.get(&prop.name) {
             Some(existing) => {
@@ -456,4 +475,79 @@ pub fn compute_report(
             }
         })
         .collect()
+}
+
+// ---------------------------------------------------------------------------
+// AggregatedReport
+// ---------------------------------------------------------------------------
+
+/// An aggregated (averaged) nutrition report across multiple days.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AggregatedReport {
+    /// Start of the date range (inclusive).
+    pub start: String,
+    /// End of the date range (inclusive).
+    pub end: String,
+    /// Number of days that had `@day` entries in this range.
+    pub days: usize,
+    /// Per-day average of intake properties.
+    pub intake: Vec<Property>,
+    /// Per-day average of exercise properties.
+    pub exercise: Vec<Property>,
+    /// Per-day average of net properties (intake − exercise).
+    pub net: Vec<Property>,
+}
+
+impl AggregatedReport {
+    /// Serialize this report to a pretty-printed JSON string.
+    pub fn to_json(&self) -> String {
+        serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".to_string())
+    }
+}
+
+/// Average a list of property lists across `n` days.
+///
+/// Each property value is summed then divided by `n`, rounded to the nearest
+/// integer for "calorie-class" unitless properties and to one decimal place
+/// for everything else.  The rounding is purely cosmetic – the stored `f64`
+/// carries the full precision.
+fn average_properties(all: Vec<Vec<Property>>, n: usize) -> Vec<Property> {
+    if n == 0 {
+        return Vec::new();
+    }
+    let summed = sum_properties(all);
+    let divisor = n as f64;
+    summed
+        .into_iter()
+        .map(|mut prop| {
+            prop.value.amount /= divisor;
+            prop
+        })
+        .collect()
+}
+
+/// Aggregate a slice of [`DailyNutritionReport`]s into a single
+/// [`AggregatedReport`] by averaging each property across all days.
+///
+/// `start` and `end` are the human-readable date range strings shown in the
+/// display (e.g. `"2026-01-01"` / `"2026-01-31"`).
+pub fn aggregate_reports(
+    reports: &[DailyNutritionReport],
+    start: &str,
+    end: &str,
+) -> AggregatedReport {
+    let n = reports.len();
+
+    let intake_all: Vec<Vec<Property>> = reports.iter().map(|r| r.intake.clone()).collect();
+    let exercise_all: Vec<Vec<Property>> = reports.iter().map(|r| r.exercise.clone()).collect();
+    let net_all: Vec<Vec<Property>> = reports.iter().map(|r| r.net.clone()).collect();
+
+    AggregatedReport {
+        start: start.to_string(),
+        end: end.to_string(),
+        days: n,
+        intake: average_properties(intake_all, n),
+        exercise: average_properties(exercise_all, n),
+        net: average_properties(net_all, n),
+    }
 }

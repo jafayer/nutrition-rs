@@ -162,12 +162,13 @@ fn parse_example_document() {
 fn parse_example_items_individually() {
 	// Helps isolate which section of the example fails
 	let input = std::fs::read_to_string("examples/test.nutrition").expect("failed to read example file");
-	// Split by lines starting with '@' while preserving leading comment blocks
+	// Split by top-level lines starting with '@' while preserving leading comment blocks
 	let mut chunks: Vec<String> = Vec::new();
 	let mut current = String::new();
+	let mut brace_depth: i32 = 0;
 	for line in input.lines() {
 		let trimmed = line.trim_start();
-		if trimmed.starts_with('@') {
+		if brace_depth == 0 && trimmed.starts_with('@') {
 			if !current.trim().is_empty() {
 				chunks.push(current.clone());
 				current.clear();
@@ -175,6 +176,16 @@ fn parse_example_items_individually() {
 		}
 		current.push_str(line);
 		current.push('\n');
+
+		// Update brace depth after appending the line so lines with '{' start the block
+		// and lines with '}' close it. This is a simple heuristic suitable for this test file.
+		for ch in line.chars() {
+			if ch == '{' {
+				brace_depth += 1;
+			} else if ch == '}' {
+				brace_depth -= 1;
+			}
+		}
 	}
 	if !current.trim().is_empty() {
 		chunks.push(current);
