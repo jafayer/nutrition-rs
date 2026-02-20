@@ -2,6 +2,7 @@ use clap::Parser;
 use nutrition_rs::cli::{env, file_loader, generate};
 use nutrition_rs::web_server::handler::run_server;
 use nutrition_rs::nutrition::{query_nutrition, compute_report};
+use nutrition_rs::display::{format_nutrition_report, format_daily_report};
 use nutrition_rs::ast::ast::Quantity;
 use tokio;
 
@@ -55,6 +56,9 @@ pub enum Commands {
             help = "Quantity to scale the result to (e.g. '200g', '2 servings')"
         )]
         quantity: Option<String>,
+
+        #[arg(long, help = "Output raw JSON instead of the nutrition-label display")]
+        json: bool,
     },
 
     /// Compute daily nutrition reports from @day blocks.
@@ -77,6 +81,9 @@ pub enum Commands {
             default_value_t = false
         )]
         ate_only: bool,
+
+        #[arg(long, help = "Output raw JSON instead of the nutrition-label display")]
+        json: bool,
     },
 }
 
@@ -118,7 +125,7 @@ async fn main() {
             run_server(port).await.unwrap();
         }
 
-        Commands::Query { name, quantity } => {
+        Commands::Query { name, quantity, json } => {
             let document = match file_loader::load_tree(Some(&cli.file)) {
                 Ok(doc) => doc,
                 Err(err) => {
@@ -137,7 +144,13 @@ async fn main() {
                 });
 
             match query_nutrition(&document, &name, requested_quantity.as_ref()) {
-                Ok(report) => println!("{}", report.to_json()),
+                Ok(report) => {
+                    if json {
+                        println!("{}", report.to_json());
+                    } else {
+                        println!("{}", format_nutrition_report(&report));
+                    }
+                }
                 Err(err) => {
                     eprintln!("Query failed: {}", err);
                     std::process::exit(1);
@@ -145,7 +158,7 @@ async fn main() {
             }
         }
 
-        Commands::Report { start, end, ate_only } => {
+        Commands::Report { start, end, ate_only, json } => {
             let document = match file_loader::load_tree(Some(&cli.file)) {
                 Ok(doc) => doc,
                 Err(err) => {
@@ -165,14 +178,28 @@ async fn main() {
                 println!("No @day entries found in the specified range.");
             } else {
                 for report in &reports {
-                    if ate_only {
-                        let output = serde_json::json!({
-                            "date": report.date,
-                            "intake": report.intake,
-                        });
-                        println!("{}", serde_json::to_string_pretty(&output).unwrap_or_default());
+                    if json {
+                        if ate_only {
+                            let output = serde_json::json!({
+                                "date": report.date,
+                                "intake": report.intake,
+                            });
+                            println!("{}", serde_json::to_string_pretty(&output).unwrap_or_default());
+                        } else {
+                            println!("{}", report.to_json());
+                        }
+                    } else if ate_only {
+                        // Human-readable intake-only view
+                        use nutrition_rs::nutrition::NutritionReport;
+                        use nutrition_rs::ast::ast::Quantity;
+                        let intake_report = NutritionReport {
+                            name: report.date.clone(),
+                            quantity: Quantity { amount: 1.0, unit: Some("day".to_string()) },
+                            properties: report.intake.clone(),
+                        };
+                        println!("{}", format_nutrition_report(&intake_report));
                     } else {
-                        println!("{}", report.to_json());
+                        println!("{}", format_daily_report(report));
                     }
                 }
             }
