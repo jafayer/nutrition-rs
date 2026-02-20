@@ -15,9 +15,9 @@ pub struct Cli {
         long,
         help = "Path to input file to parse (or set via env: NUTRITION_DEFAULT_FILE)",
         env = env::DEFAULT_FILE_ENV_VAR,
-        required = true,
+        global = true
     )]
-    pub file: String,
+    pub file: Option<String>,
 
     #[command(subcommand)]
     pub command: Commands,
@@ -99,15 +99,16 @@ async fn main() {
 
     match cli.command {
         Commands::Validate { show_tree } => {
-            file_loader::load_tree(Some(&cli.file))
+            let file = require_file(&cli.file);
+            file_loader::load_tree(Some(&file))
                 .map(|document| {
-                    println!("File '{}' is valid.", cli.file);
+                    println!("File '{}' is valid.", file);
                     if show_tree {
                         print_document(document);
                     }
                 })
                 .unwrap_or_else(|err| {
-                    eprintln!("Validation failed for file '{}': {}", cli.file, err);
+                    eprintln!("Validation failed for file '{}': {}", file, err);
                 });
         }
 
@@ -132,10 +133,11 @@ async fn main() {
         }
 
         Commands::Query { name, quantity, json } => {
-            let document = match file_loader::load_tree(Some(&cli.file)) {
+            let file = require_file(&cli.file);
+            let document = match file_loader::load_tree(Some(&file)) {
                 Ok(doc) => doc,
                 Err(err) => {
-                    eprintln!("Failed to load file '{}': {}", cli.file, err);
+                    eprintln!("Failed to load file '{}': {}", file, err);
                     std::process::exit(1);
                 }
             };
@@ -165,10 +167,11 @@ async fn main() {
         }
 
         Commands::Report { start, end, ate_only, no_aggregate, json } => {
-            let document = match file_loader::load_tree(Some(&cli.file)) {
+            let file = require_file(&cli.file);
+            let document = match file_loader::load_tree(Some(&file)) {
                 Ok(doc) => doc,
                 Err(err) => {
-                    eprintln!("Failed to load file '{}': {}", cli.file, err);
+                    eprintln!("Failed to load file '{}': {}", file, err);
                     std::process::exit(1);
                 }
             };
@@ -283,6 +286,16 @@ fn current_date_iso8601() -> String {
     let y = if m <= 2 { y + 1 } else { y };
 
     format!("{:04}-{:02}-{:02}", y, m, d)
+}
+
+fn require_file(file: &Option<String>) -> String {
+    file.clone().unwrap_or_else(|| {
+        eprintln!(
+            "Missing required argument: --file <FILE> (or set {})",
+            env::DEFAULT_FILE_ENV_VAR
+        );
+        std::process::exit(1);
+    })
 }
 
 fn print_document(node: nutrition_rs::ast::ast::Document) {
