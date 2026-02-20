@@ -83,7 +83,10 @@ fn scale_properties(properties: &[Property], scale: f64) -> Vec<Property> {
             name: prop.name.clone(),
             value: Quantity {
                 amount: prop.value.amount * scale,
-                unit: prop.value.unit.clone(),
+                unit: {
+                    let u = resolve_unit(&prop.name, prop.value.unit.as_deref());
+                    if u.is_empty() { None } else { Some(u) }
+                },
             },
         })
         .collect()

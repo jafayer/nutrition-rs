@@ -71,6 +71,35 @@ fn scale_ingredient_cross_unit_via_equivalency() {
     assert!((report.properties[0].value.amount - 538.0).abs() < 1e-6);
 }
 
+#[test]
+fn unitless_calories_in_ingredient_are_normalised_to_kcal() {
+    // Ingredients commonly declare `calories: 269` with no unit.
+    // After the fix, query output should show the kcal unit.
+    let ing = Ingredient {
+        aliases: vec!["chickpeas".to_string()],
+        quantities: vec![Quantity { amount: 100.0, unit: Some("g".to_string()) }],
+        properties: vec![
+            Property {
+                name: "calories".to_string(),
+                value: Quantity { amount: 269.0, unit: None }, // ← no unit
+            },
+            Property {
+                name: "protein".to_string(),
+                value: Quantity { amount: 14.5, unit: None }, // ← no unit; should become g
+            },
+        ],
+    };
+
+    let report = compute_ingredient_nutrition(&ing, None);
+
+    let cal = report.properties.iter().find(|p| p.name == "calories").unwrap();
+    assert_eq!(cal.value.unit.as_deref(), Some("kcal"), "calories should be normalised to kcal");
+    assert!((cal.value.amount - 269.0).abs() < 1e-6);
+
+    let prot = report.properties.iter().find(|p| p.name == "protein").unwrap();
+    assert_eq!(prot.value.unit.as_deref(), Some("g"), "protein should be normalised to g");
+}
+
 // ---------------------------------------------------------------------------
 // Recipe computation
 // ---------------------------------------------------------------------------
