@@ -53,6 +53,7 @@ fn parse_property<'a>() -> impl Parser<'a, &'a [Token], Property> + Clone {
 
 fn parse_ingredient_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
     just(Token::AtIngredient)
+        .or(just(Token::AtFood))
         .ignore_then(parse_quantities_in_parens())
         .then(
             parse_string()
