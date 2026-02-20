@@ -1,3 +1,6 @@
+[workspace]
+members = [".", "nutrition-units"]
+
 [package]
 name = "nutrition_rs"
 version = "0.1.0"
@@ -16,6 +19,7 @@ name = "nutrition_rs"
 path = "src/lib.rs"
 
 [dependencies]
+nutrition-units = { path = "nutrition-units" }
 async-openai = {version = "0.32.3", features = ["chat-completion"]}
 async-trait = "0.1.89"
 axum = "0.8.8"
