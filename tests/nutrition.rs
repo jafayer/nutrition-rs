@@ -2,7 +2,7 @@
 
 use nutrition_rs::ast::ast::{Ate, Day, DayItem, Document, Exercise, Exercised, Ingredient, IngredientLabel, Item, Property, Quantity, Recipe};
 use nutrition_rs::nutrition::{
-    compute_daily_report, compute_ingredient_nutrition, compute_recipe_nutrition,
+    aggregate_reports, compute_daily_report, compute_ingredient_nutrition, compute_recipe_nutrition,
     compute_report, query_nutrition,
 };
 
@@ -364,4 +364,101 @@ fn daily_report_unknown_food_skipped_gracefully() {
     let report = compute_daily_report(&doc, &day);
     assert!(report.intake.is_empty());
     assert!(report.exercise.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// aggregate_reports
+// ---------------------------------------------------------------------------
+
+#[test]
+fn aggregate_reports_averages_properties_across_days() {
+    // Two days: 200 kcal on day 1, 400 kcal on day 2 → average 300 kcal.
+    let ing = make_ingredient("apple", 1.0, "unit", vec![("calories", 200.0, Some("kcal"))]);
+    let day1 = Day {
+        date: "2026-01-01".to_string(),
+        items: vec![DayItem::Ate(Ate {
+            food_alias: "apple".to_string(),
+            quantity: Quantity { amount: 1.0, unit: Some("unit".to_string()) },
+        })],
+    };
+    let day2 = Day {
+        date: "2026-01-02".to_string(),
+        items: vec![DayItem::Ate(Ate {
+            food_alias: "apple".to_string(),
+            quantity: Quantity { amount: 2.0, unit: Some("unit".to_string()) },
+        })],
+    };
+    let doc = make_document(vec![
+        Item::Ingredient(ing),
+        Item::Day(day1),
+        Item::Day(day2),
+    ]);
+
+    let reports = compute_report(&doc, Some("2026-01-01"), Some("2026-01-02"));
+    assert_eq!(reports.len(), 2);
+
+    let agg = aggregate_reports(&reports, "2026-01-01", "2026-01-02");
+    assert_eq!(agg.start, "2026-01-01");
+    assert_eq!(agg.end, "2026-01-02");
+    assert_eq!(agg.days, 2);
+
+    let cal = agg.intake.iter().find(|p| p.name == "calories").unwrap();
+    // 200 + 400 = 600; 600 / 2 = 300
+    assert!((cal.value.amount - 300.0).abs() < 1e-6);
+}
+
+#[test]
+fn aggregate_reports_single_day_returns_same_values() {
+    let ing = make_ingredient("rice", 100.0, "g", vec![("calories", 130.0, Some("kcal"))]);
+    let day = Day {
+        date: "2026-03-01".to_string(),
+        items: vec![DayItem::Ate(Ate {
+            food_alias: "rice".to_string(),
+            quantity: Quantity { amount: 100.0, unit: Some("g".to_string()) },
+        })],
+    };
+    let doc = make_document(vec![Item::Ingredient(ing), Item::Day(day)]);
+    let reports = compute_report(&doc, Some("2026-03-01"), Some("2026-03-01"));
+    assert_eq!(reports.len(), 1);
+
+    let agg = aggregate_reports(&reports, "2026-03-01", "2026-03-01");
+    assert_eq!(agg.days, 1);
+    let cal = agg.intake.iter().find(|p| p.name == "calories").unwrap();
+    // Single day – average equals the day's value.
+    assert!((cal.value.amount - 130.0).abs() < 1e-6);
+}
+
+#[test]
+fn aggregate_reports_subtracts_exercise_in_net() {
+    // eat 300 kcal, burn 100 kcal/day × 2 days → net avg = 200 kcal
+    let ing = make_ingredient("rice", 100.0, "g", vec![("calories", 300.0, Some("kcal"))]);
+    let ex = make_exercise("cycling", 30.0, "min", vec![("calories", 100.0, Some("kcal"))]);
+    let make_day = |date: &str| Day {
+        date: date.to_string(),
+        items: vec![
+            DayItem::Ate(Ate {
+                food_alias: "rice".to_string(),
+                quantity: Quantity { amount: 100.0, unit: Some("g".to_string()) },
+            }),
+            DayItem::Exercised(Exercised {
+                exercise_alias: "cycling".to_string(),
+                quantity: Quantity { amount: 30.0, unit: Some("min".to_string()) },
+            }),
+        ],
+    };
+    let day1 = make_day("2026-04-01");
+    let day2 = make_day("2026-04-02");
+    let doc = make_document(vec![
+        Item::Ingredient(ing),
+        Item::Exercise(ex),
+        Item::Day(day1),
+        Item::Day(day2),
+    ]);
+
+    let reports = compute_report(&doc, Some("2026-04-01"), Some("2026-04-02"));
+    let agg = aggregate_reports(&reports, "2026-04-01", "2026-04-02");
+
+    let net_cal = agg.net.iter().find(|p| p.name == "calories").unwrap();
+    // Each day: 300 - 100 = 200; average = 200
+    assert!((net_cal.value.amount - 200.0).abs() < 1e-6);
 }

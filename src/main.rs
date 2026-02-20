@@ -1,8 +1,8 @@
 use clap::Parser;
 use nutrition_rs::cli::{env, file_loader, generate};
 use nutrition_rs::web_server::handler::run_server;
-use nutrition_rs::nutrition::{query_nutrition, compute_report};
-use nutrition_rs::display::{format_nutrition_report, format_daily_report};
+use nutrition_rs::nutrition::{query_nutrition, compute_report, aggregate_reports};
+use nutrition_rs::display::{format_nutrition_report, format_daily_report, format_aggregated_report};
 use nutrition_rs::ast::ast::Quantity;
 use tokio;
 
@@ -82,6 +82,12 @@ pub enum Commands {
         )]
         ate_only: bool,
 
+        #[arg(
+            long,
+            help = "Show each day individually instead of aggregating over the date range"
+        )]
+        no_aggregate: bool,
+
         #[arg(long, help = "Output raw JSON instead of the nutrition-label display")]
         json: bool,
     },
@@ -158,7 +164,7 @@ async fn main() {
             }
         }
 
-        Commands::Report { start, end, ate_only, json } => {
+        Commands::Report { start, end, ate_only, no_aggregate, json } => {
             let document = match file_loader::load_tree(Some(&cli.file)) {
                 Ok(doc) => doc,
                 Err(err) => {
@@ -183,6 +189,41 @@ async fn main() {
 
             if reports.is_empty() {
                 println!("No @day entries found in the specified range.");
+                return;
+            }
+
+            // Aggregate when the range spans more than one date and --no-aggregate
+            // was not requested.
+            let is_range = start_resolved != end_resolved;
+            let use_aggregate = is_range && !no_aggregate;
+
+            if use_aggregate {
+                let agg = aggregate_reports(&reports, start_resolved, end_resolved);
+                if json {
+                    if ate_only {
+                        let output = serde_json::json!({
+                            "start": agg.start,
+                            "end": agg.end,
+                            "days": agg.days,
+                            "intake": agg.intake,
+                        });
+                        println!("{}", serde_json::to_string_pretty(&output).unwrap_or_default());
+                    } else {
+                        println!("{}", agg.to_json());
+                    }
+                } else if ate_only {
+                    use nutrition_rs::nutrition::NutritionReport;
+                    use nutrition_rs::ast::ast::Quantity;
+                    let label = format!("{} \u{2013} {}", agg.start, agg.end);
+                    let intake_report = NutritionReport {
+                        name: label,
+                        quantity: Quantity { amount: agg.days as f64, unit: Some("days".to_string()) },
+                        properties: agg.intake,
+                    };
+                    println!("{}", format_nutrition_report(&intake_report));
+                } else {
+                    println!("{}", format_aggregated_report(&agg));
+                }
             } else {
                 for report in &reports {
                     if json {
@@ -196,7 +237,6 @@ async fn main() {
                             println!("{}", report.to_json());
                         }
                     } else if ate_only {
-                        // Human-readable intake-only view
                         use nutrition_rs::nutrition::NutritionReport;
                         use nutrition_rs::ast::ast::Quantity;
                         let intake_report = NutritionReport {

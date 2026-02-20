@@ -457,3 +457,78 @@ pub fn compute_report(
         })
         .collect()
 }
+
+// ---------------------------------------------------------------------------
+// AggregatedReport
+// ---------------------------------------------------------------------------
+
+/// An aggregated (averaged) nutrition report across multiple days.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AggregatedReport {
+    /// Start of the date range (inclusive).
+    pub start: String,
+    /// End of the date range (inclusive).
+    pub end: String,
+    /// Number of days that had `@day` entries in this range.
+    pub days: usize,
+    /// Per-day average of intake properties.
+    pub intake: Vec<Property>,
+    /// Per-day average of exercise properties.
+    pub exercise: Vec<Property>,
+    /// Per-day average of net properties (intake − exercise).
+    pub net: Vec<Property>,
+}
+
+impl AggregatedReport {
+    /// Serialize this report to a pretty-printed JSON string.
+    pub fn to_json(&self) -> String {
+        serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".to_string())
+    }
+}
+
+/// Average a list of property lists across `n` days.
+///
+/// Each property value is summed then divided by `n`, rounded to the nearest
+/// integer for "calorie-class" unitless properties and to one decimal place
+/// for everything else.  The rounding is purely cosmetic – the stored `f64`
+/// carries the full precision.
+fn average_properties(all: Vec<Vec<Property>>, n: usize) -> Vec<Property> {
+    if n == 0 {
+        return Vec::new();
+    }
+    let summed = sum_properties(all);
+    let divisor = n as f64;
+    summed
+        .into_iter()
+        .map(|mut prop| {
+            prop.value.amount /= divisor;
+            prop
+        })
+        .collect()
+}
+
+/// Aggregate a slice of [`DailyNutritionReport`]s into a single
+/// [`AggregatedReport`] by averaging each property across all days.
+///
+/// `start` and `end` are the human-readable date range strings shown in the
+/// display (e.g. `"2026-01-01"` / `"2026-01-31"`).
+pub fn aggregate_reports(
+    reports: &[DailyNutritionReport],
+    start: &str,
+    end: &str,
+) -> AggregatedReport {
+    let n = reports.len();
+
+    let intake_all: Vec<Vec<Property>> = reports.iter().map(|r| r.intake.clone()).collect();
+    let exercise_all: Vec<Vec<Property>> = reports.iter().map(|r| r.exercise.clone()).collect();
+    let net_all: Vec<Vec<Property>> = reports.iter().map(|r| r.net.clone()).collect();
+
+    AggregatedReport {
+        start: start.to_string(),
+        end: end.to_string(),
+        days: n,
+        intake: average_properties(intake_all, n),
+        exercise: average_properties(exercise_all, n),
+        net: average_properties(net_all, n),
+    }
+}

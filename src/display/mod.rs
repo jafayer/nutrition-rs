@@ -7,7 +7,7 @@
 //! Pass `--json` on the CLI to skip this display and emit raw JSON instead.
 
 use crate::ast::ast::Property;
-use crate::nutrition::{DailyNutritionReport, NutritionReport};
+use crate::nutrition::{AggregatedReport, DailyNutritionReport, NutritionReport};
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 
@@ -210,9 +210,72 @@ pub fn format_daily_report(report: &DailyNutritionReport) -> String {
     lines.join("\n")
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
+/// Render an [`AggregatedReport`] as a nutrition-label-style box showing the
+/// date range, number of days, and per-day averages for Intake / Exercise / Net.
+///
+/// ```text
+/// ┌────────────────────────────────────────────┐
+/// │       Average Daily Nutrition Report       │
+/// │          2026-01-01 – 2026-01-31           │
+/// │               2 days of data               │
+/// ├────────────────── Intake ──────────────────┤
+/// │  calories                           190.3  │
+/// ├─────────────────── Net ────────────────────┤
+/// │  calories                           190.3  │
+/// └────────────────────────────────────────────┘
+/// ```
+pub fn format_aggregated_report(report: &AggregatedReport) -> String {
+    let mut lines = Vec::new();
+    lines.push(top_border());
+    lines.push(center_row("Average Daily Nutrition Report"));
+    let range_str = if report.start == report.end {
+        report.start.clone()
+    } else {
+        format!("{} \u{2013} {}", report.start, report.end)
+    };
+    lines.push(center_row(&range_str));
+    let days_str = if report.days == 1 {
+        "1 day of data".to_string()
+    } else {
+        format!("{} days of data", report.days)
+    };
+    lines.push(center_row(&days_str));
 
-#[cfg(test)]
+    // ── Intake ──
+    lines.push(section_divider("Intake"));
+    let intake = sorted_props(&report.intake);
+    if intake.is_empty() {
+        lines.push(center_row("(no intake recorded)"));
+    } else {
+        for prop in intake {
+            lines.push(property_row(prop));
+        }
+    }
+
+    // ── Exercise (omitted when empty) ──
+    if !report.exercise.is_empty() {
+        lines.push(section_divider("Exercise"));
+        for prop in sorted_props(&report.exercise) {
+            lines.push(property_row(prop));
+        }
+    }
+
+    // ── Net ──
+    lines.push(section_divider("Net"));
+    let net = sorted_props(&report.net);
+    if net.is_empty() {
+        lines.push(center_row("(no data)"));
+    } else {
+        for prop in net {
+            lines.push(property_row(prop));
+        }
+    }
+
+    lines.push(bottom_border());
+    lines.join("\n")
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
 mod tests {
     use super::*;
     use crate::ast::ast::{Property, Quantity};
