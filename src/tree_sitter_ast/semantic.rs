@@ -45,7 +45,7 @@ impl SemanticAnalyzer {
     fn collect_definitions(&mut self, node: Node, source: &str) -> Result<(), String> {
         for child in node.children(&mut node.walk()) {
             match child.kind() {
-                "ingredient_decl" => {
+                "ingredient_decl" | "food_decl" => {
                     if let Ok(ingredient) = self.parse_ingredient_def(child, source) {
                         for alias in &ingredient.aliases {
                             self.ingredients.insert(alias.clone(), ingredient.clone());
@@ -82,7 +82,7 @@ impl SemanticAnalyzer {
 
     fn parse_item(&mut self, node: Node, source: &str) -> Result<Item, String> {
         match node.kind() {
-            "ingredient_decl" => Ok(Item::Ingredient(self.parse_ingredient_def(node, source)?)),
+            "ingredient_decl" | "food_decl" => Ok(Item::Ingredient(self.parse_ingredient_def(node, source)?)),
             "recipe_decl" => Ok(Item::Recipe(self.parse_recipe_def(node, source)?)),
             "exercise_decl" => Ok(Item::Exercise(self.parse_exercise_def(node, source)?)),
             "day_decl" => Ok(Item::Day(self.parse_day(node, source)?)),
