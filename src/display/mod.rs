@@ -276,6 +276,7 @@ pub fn format_aggregated_report(report: &AggregatedReport) -> String {
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::ast::ast::{Property, Quantity};
