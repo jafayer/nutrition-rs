@@ -5,3 +5,4 @@ pub mod cli;
 pub mod tree_sitter_ast;
 pub mod emitters;
 pub mod web_server;
+pub mod nutrition;
