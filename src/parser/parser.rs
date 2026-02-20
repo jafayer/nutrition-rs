@@ -171,6 +171,39 @@ fn parse_day_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
         })
 }
 
+fn parse_exercise_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
+    just(Token::AtExercise)
+        .ignore_then(parse_quantities_in_parens())
+        .then(
+            parse_string()
+                .repeated()
+                .at_least(1)
+                .collect()
+        )
+        .then(
+            just(Token::LBrace)
+                .ignore_then(skip_block_ws())
+                .ignore_then(
+                    parse_property()
+                        .separated_by(block_separator())
+                        .allow_trailing()
+                        .collect()
+                        .or_not()
+                        .map(|opt| opt.unwrap_or_default()),
+                )
+                .then_ignore(skip_block_ws())
+                .then_ignore(just(Token::RBrace))
+                .then_ignore(skip_block_ws())
+        )
+        .map(|((quantities, aliases), properties)| {
+            Item::Exercise(Exercise {
+                aliases,
+                quantities,
+                properties,
+            })
+        })
+}
+
 fn parse_comment<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
     select! { Token::Comment(c) => Item::Comment(c) }
 }
@@ -178,6 +211,7 @@ fn parse_comment<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
 fn parse_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
     parse_ingredient_item()
         .or(parse_recipe_item())
+        .or(parse_exercise_item())
         .or(parse_day_item())
         .or(parse_comment())
 }

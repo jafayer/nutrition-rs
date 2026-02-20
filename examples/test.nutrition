@@ -12,6 +12,10 @@
 
 @recipe(8)(500g) "chickpea stew" { "chickpeas"(2 cups), "water"(5 cups) } // test
 
+@exercise(30 min) "running" {
+    calories: 300kcal
+}
+
 @day "2026-01-01" { // test comment
     // test comment
     @ate "chickpea stew"(2)
@@ -25,7 +29,7 @@
 
 @day "2026-01-06" {
     @ate "simple chickpeas"(3)
-    @exercised "running"(30 minutes)
+    @exercised "running"(30 min)
 }
 
 @ingredient(164g)(1cup) "chickpea" "chickpeas" "garbanzo beans" {

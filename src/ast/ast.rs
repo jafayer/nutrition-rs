@@ -390,25 +390,25 @@ impl Exercise {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Ate {
     pub food_alias: String,
     pub quantity: Quantity,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Exercised {
     pub exercise_alias: String,
     pub quantity: Quantity,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DayItem {
     Ate(Ate),
     Exercised(Exercised),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Day {
     pub date: String,
     pub items: Vec<DayItem>,

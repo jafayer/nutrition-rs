@@ -4,7 +4,7 @@
 //! scaling and summing nutritional properties using the `nutrition-units`
 //! unit registry.
 
-use crate::ast::ast::{Document, Ingredient, Item, Property, Quantity, Recipe};
+use crate::ast::ast::{Day, DayItem, Document, Exercise, Ingredient, Item, Property, Quantity, Recipe};
 use nutrition_units::{NutritionQuantity, UnitRegistry};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -25,6 +25,30 @@ pub struct NutritionReport {
 }
 
 impl NutritionReport {
+    /// Serialize this report to a pretty-printed JSON string.
+    pub fn to_json(&self) -> String {
+        serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".to_string())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DailyNutritionReport
+// ---------------------------------------------------------------------------
+
+/// The computed nutritional breakdown for a single day.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DailyNutritionReport {
+    /// The date this report covers (as stored in the `@day` block).
+    pub date: String,
+    /// Summed nutritional properties from all `@ate` entries.
+    pub intake: Vec<Property>,
+    /// Summed nutritional properties burned via all `@exercised` entries.
+    pub exercise: Vec<Property>,
+    /// Net properties: intake minus exercise (per matching property).
+    pub net: Vec<Property>,
+}
+
+impl DailyNutritionReport {
     /// Serialize this report to a pretty-printed JSON string.
     pub fn to_json(&self) -> String {
         serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".to_string())
@@ -138,6 +162,58 @@ fn compute_scale(ingredient_quantities: &[Quantity], requested: &Quantity) -> f6
         // Fallback: treat as a plain numeric ratio.
         requested.amount / base.amount
     }
+}
+
+/// Subtract `exercise` properties from `intake` properties using unit-aware
+/// arithmetic.  Properties that appear only in intake are kept as-is;
+/// properties that appear only in exercise are carried over with a negated
+/// amount.
+fn subtract_properties(intake: &[Property], exercise: &[Property]) -> Vec<Property> {
+    let reg = UnitRegistry::with_si_defaults();
+    let mut result: HashMap<String, NutritionQuantity> = HashMap::new();
+
+    // Seed with intake values.
+    for prop in intake {
+        let unit = prop.value.unit.clone().unwrap_or_default();
+        let nq = NutritionQuantity::new(prop.value.amount, unit);
+        result.insert(prop.name.clone(), nq);
+    }
+
+    // Subtract exercise values.
+    for prop in exercise {
+        let unit = prop.value.unit.clone().unwrap_or_default();
+        let nq = NutritionQuantity::new(prop.value.amount, &unit);
+        match result.get(&prop.name) {
+            Some(existing) => {
+                // Try unit-aware subtraction: existing - exercise.
+                let neg = NutritionQuantity::new(-nq.amount, &nq.unit);
+                match reg.add(existing, &neg) {
+                    Ok(diff) => { result.insert(prop.name.clone(), diff); }
+                    Err(_) => {
+                        // Incompatible units – subtract numerically.
+                        let mut entry = existing.clone();
+                        entry.amount -= nq.amount;
+                        result.insert(prop.name.clone(), entry);
+                    }
+                }
+            }
+            None => {
+                // Exercise-only property – net is negative.
+                result.insert(prop.name.clone(), NutritionQuantity::new(-nq.amount, &nq.unit));
+            }
+        }
+    }
+
+    result
+        .into_iter()
+        .map(|(name, nq)| Property {
+            name,
+            value: Quantity {
+                amount: nq.amount,
+                unit: if nq.unit.is_empty() { None } else { Some(nq.unit) },
+            },
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -269,4 +345,115 @@ pub fn query_nutrition(
     }
 
     Err(format!("No ingredient or recipe named '{alias}' found in document."))
+}
+
+/// Compute the nutritional properties burned by a single exercise at the given
+/// quantity.
+fn compute_exercise_nutrition(
+    exercise: &Exercise,
+    requested_quantity: Option<&Quantity>,
+) -> Vec<Property> {
+    let scale = match requested_quantity {
+        None => 1.0,
+        Some(req) => compute_scale(&exercise.quantities, req),
+    };
+    scale_properties(&exercise.properties, scale)
+}
+
+/// Compute the daily nutrition report for `day` by resolving all `@ate` and
+/// `@exercised` entries against the definitions in `document`.
+///
+/// Unrecognised food/exercise aliases are silently skipped so that partial
+/// data still produces a useful report.
+pub fn compute_daily_report(document: &Document, day: &Day) -> DailyNutritionReport {
+    // Build lookup tables for ingredients, recipes, and exercises.
+    let mut ingredients: HashMap<String, &Ingredient> = HashMap::new();
+    let mut recipes: HashMap<String, &Recipe> = HashMap::new();
+    let mut exercises: HashMap<String, &Exercise> = HashMap::new();
+
+    for item in &document.items {
+        match item {
+            Item::Ingredient(ing) => {
+                for alias in &ing.aliases {
+                    ingredients.insert(alias.clone(), ing);
+                }
+            }
+            Item::Recipe(rec) => {
+                for alias in &rec.aliases {
+                    recipes.insert(alias.clone(), rec);
+                }
+            }
+            Item::Exercise(ex) => {
+                for alias in &ex.aliases {
+                    exercises.insert(alias.clone(), ex);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Accumulate intake and exercise properties separately.
+    let mut intake_all: Vec<Vec<Property>> = Vec::new();
+    let mut exercise_all: Vec<Vec<Property>> = Vec::new();
+
+    for day_item in &day.items {
+        match day_item {
+            DayItem::Ate(ate) => {
+                if let Some(ing) = ingredients.get(&ate.food_alias) {
+                    let report = compute_ingredient_nutrition(ing, Some(&ate.quantity));
+                    intake_all.push(report.properties);
+                } else if let Some(rec) = recipes.get(&ate.food_alias) {
+                    if let Ok(report) = compute_recipe_nutrition(document, rec, Some(&ate.quantity)) {
+                        intake_all.push(report.properties);
+                    }
+                }
+                // Unrecognised alias: skip gracefully.
+            }
+            DayItem::Exercised(exercised) => {
+                if let Some(ex) = exercises.get(&exercised.exercise_alias) {
+                    let props = compute_exercise_nutrition(ex, Some(&exercised.quantity));
+                    exercise_all.push(props);
+                }
+                // Unrecognised exercise alias: skip gracefully.
+            }
+        }
+    }
+
+    let intake = sum_properties(intake_all);
+    let exercise = sum_properties(exercise_all);
+    let net = subtract_properties(&intake, &exercise);
+
+    DailyNutritionReport {
+        date: day.date.clone(),
+        intake,
+        exercise,
+        net,
+    }
+}
+
+/// Compute daily nutrition reports for every `@day` block whose date falls
+/// within `[start, end]` (inclusive, lexicographic comparison on ISO-8601
+/// date strings).  Pass `None` for either bound to leave that side open.
+pub fn compute_report(
+    document: &Document,
+    start: Option<&str>,
+    end: Option<&str>,
+) -> Vec<DailyNutritionReport> {
+    document
+        .items
+        .iter()
+        .filter_map(|item| {
+            if let Item::Day(day) = item {
+                let in_range = start.map_or(true, |s| day.date.as_str() >= s)
+                    && end.map_or(true, |e| day.date.as_str() <= e);
+                if in_range {
+                    Some(compute_daily_report(document, day))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .collect()
 }

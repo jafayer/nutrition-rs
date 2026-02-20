@@ -126,6 +126,31 @@ fn parses_comment_as_item() {
 }
 
 #[test]
+fn parses_exercise_block() {
+	let doc = parse_document(
+		r#"@exercise(30 min) "running" {
+	calories: 300kcal
+}"#,
+	);
+
+	assert_eq!(doc.items.len(), 1);
+
+	match &doc.items[0] {
+		Item::Exercise(ex) => {
+			assert_eq!(ex.aliases, vec!["running"]);
+			assert_eq!(ex.quantities.len(), 1);
+			assert_eq!(ex.quantities[0].amount, 30.0);
+			assert_eq!(ex.quantities[0].unit.as_deref(), Some("min"));
+			assert_eq!(ex.properties.len(), 1);
+			assert_eq!(ex.properties[0].name, "calories");
+			assert_eq!(ex.properties[0].value.amount, 300.0);
+			assert_eq!(ex.properties[0].value.unit.as_deref(), Some("kcal"));
+		}
+		other => panic!("unexpected item parsed: {other:?}"),
+	}
+}
+
+#[test]
 fn parse_example_document() {
     // load examples/test.nutrition and parse
     let input = std::fs::read_to_string("examples/test.nutrition").expect("failed to read example file");
