@@ -367,6 +367,59 @@ fn daily_report_unknown_food_skipped_gracefully() {
 }
 
 // ---------------------------------------------------------------------------
+// Unit normalisation (unitless vs explicit-unit properties)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn unitless_calories_and_kcal_exercise_produce_consistent_units() {
+    // Ingredients often declare `calories: 269` (no unit) while exercises
+    // use `calories: 300kcal`.  After the fix, both should be treated as kcal
+    // and the net should correctly reflect the arithmetic — with a kcal unit.
+    let ing = Ingredient {
+        aliases: vec!["oats".to_string()],
+        quantities: vec![Quantity { amount: 100.0, unit: Some("g".to_string()) }],
+        properties: vec![Property {
+            name: "calories".to_string(),
+            value: Quantity { amount: 300.0, unit: None }, // ← no unit
+        }],
+    };
+    let ex = make_exercise("run", 30.0, "min", vec![("calories", 200.0, Some("kcal"))]);
+    let day = Day {
+        date: "2026-05-01".to_string(),
+        items: vec![
+            DayItem::Ate(Ate {
+                food_alias: "oats".to_string(),
+                quantity: Quantity { amount: 100.0, unit: Some("g".to_string()) },
+            }),
+            DayItem::Exercised(Exercised {
+                exercise_alias: "run".to_string(),
+                quantity: Quantity { amount: 30.0, unit: Some("min".to_string()) },
+            }),
+        ],
+    };
+    let doc = make_document(vec![
+        Item::Ingredient(ing),
+        Item::Exercise(ex),
+        Item::Day(day.clone()),
+    ]);
+    let report = compute_daily_report(&doc, &day);
+
+    let intake_cal = report.intake.iter().find(|p| p.name == "calories").unwrap();
+    // Unit should be normalised to kcal even though source had no unit.
+    assert_eq!(intake_cal.value.unit.as_deref(), Some("kcal"));
+    assert!((intake_cal.value.amount - 300.0).abs() < 1e-6);
+
+    let ex_cal = report.exercise.iter().find(|p| p.name == "calories").unwrap();
+    assert_eq!(ex_cal.value.unit.as_deref(), Some("kcal"));
+
+    let net_cal = report.net.iter().find(|p| p.name == "calories").unwrap();
+    // Net should also carry the kcal unit.
+    assert_eq!(net_cal.value.unit.as_deref(), Some("kcal"));
+    // 300 - 200 = 100 kcal
+    assert!((net_cal.value.amount - 100.0).abs() < 1e-6);
+}
+
+// ---------------------------------------------------------------------------
 // aggregate_reports
 // ---------------------------------------------------------------------------
 

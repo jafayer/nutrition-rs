@@ -5,7 +5,7 @@
 //! unit registry.
 
 use crate::ast::ast::{Day, DayItem, Document, Exercise, Ingredient, Item, Property, Quantity, Recipe};
-use nutrition_units::{NutritionQuantity, UnitRegistry};
+use nutrition_units::{default_unit_for_property, NutritionQuantity, UnitRegistry};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -59,6 +59,22 @@ impl DailyNutritionReport {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/// Return the effective unit string for a property value.
+///
+/// If the declared unit is non-empty it is returned as-is.  Otherwise the
+/// canonical default for the property name is used (e.g. `"calories"` →
+/// `"kcal"`, `"protein"` → `"g"`).  This normalises unitless declarations
+/// like `calories: 269` so they are compatible with explicit-unit declarations
+/// like `calories: 300kcal` in arithmetic operations.
+fn resolve_unit(prop_name: &str, declared_unit: Option<&str>) -> String {
+    match declared_unit {
+        Some(u) if !u.is_empty() => u.to_string(),
+        _ => default_unit_for_property(prop_name)
+            .unwrap_or("")
+            .to_string(),
+    }
+}
+
 /// Scale every property in `properties` by `scale`.
 fn scale_properties(properties: &[Property], scale: f64) -> Vec<Property> {
     properties
@@ -84,7 +100,7 @@ fn sum_properties(all_properties: Vec<Vec<Property>>) -> Vec<Property> {
 
     for properties in all_properties {
         for prop in properties {
-            let unit = prop.value.unit.clone().unwrap_or_default();
+            let unit = resolve_unit(&prop.name, prop.value.unit.as_deref());
             let nq = NutritionQuantity::new(prop.value.amount, unit);
 
             match totals.get(&prop.name) {
@@ -174,14 +190,14 @@ fn subtract_properties(intake: &[Property], exercise: &[Property]) -> Vec<Proper
 
     // Seed with intake values.
     for prop in intake {
-        let unit = prop.value.unit.clone().unwrap_or_default();
+        let unit = resolve_unit(&prop.name, prop.value.unit.as_deref());
         let nq = NutritionQuantity::new(prop.value.amount, unit);
         result.insert(prop.name.clone(), nq);
     }
 
     // Subtract exercise values.
     for prop in exercise {
-        let unit = prop.value.unit.clone().unwrap_or_default();
+        let unit = resolve_unit(&prop.name, prop.value.unit.as_deref());
         let nq = NutritionQuantity::new(prop.value.amount, &unit);
         match result.get(&prop.name) {
             Some(existing) => {
