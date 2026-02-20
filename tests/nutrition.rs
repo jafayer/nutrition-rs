@@ -1,8 +1,9 @@
 //! Integration tests for the nutrition computation module.
 
-use nutrition_rs::ast::ast::{Document, Ingredient, IngredientLabel, Item, Property, Quantity, Recipe};
+use nutrition_rs::ast::ast::{Ate, Day, DayItem, Document, Exercise, Exercised, Ingredient, IngredientLabel, Item, Property, Quantity, Recipe};
 use nutrition_rs::nutrition::{
-    compute_ingredient_nutrition, compute_recipe_nutrition, query_nutrition,
+    compute_daily_report, compute_ingredient_nutrition, compute_recipe_nutrition,
+    compute_report, query_nutrition,
 };
 
 // ---------------------------------------------------------------------------
@@ -211,4 +212,156 @@ fn query_nutrition_finds_recipe() {
 fn query_nutrition_unknown_alias_returns_error() {
     let doc = make_document(vec![]);
     assert!(query_nutrition(&doc, "nope", None).is_err());
+}
+
+// ---------------------------------------------------------------------------
+// Daily report computation
+// ---------------------------------------------------------------------------
+
+fn make_exercise(alias: &str, base_amount: f64, base_unit: &str, props: Vec<(&str, f64, Option<&str>)>) -> Exercise {
+    Exercise {
+        aliases: vec![alias.to_string()],
+        quantities: vec![Quantity {
+            amount: base_amount,
+            unit: Some(base_unit.to_string()),
+        }],
+        properties: props
+            .into_iter()
+            .map(|(name, amount, unit)| Property {
+                name: name.to_string(),
+                value: Quantity {
+                    amount,
+                    unit: unit.map(|u| u.to_string()),
+                },
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn daily_report_sums_ate_intake() {
+    // 100g chickpeas = 269 kcal; eat 200g → 538 kcal
+    let ing = make_ingredient("chickpeas", 100.0, "g", vec![("calories", 269.0, Some("kcal"))]);
+    let day = Day {
+        date: "2026-01-01".to_string(),
+        items: vec![DayItem::Ate(Ate {
+            food_alias: "chickpeas".to_string(),
+            quantity: Quantity { amount: 200.0, unit: Some("g".to_string()) },
+        })],
+    };
+    let doc = make_document(vec![Item::Ingredient(ing), Item::Day(day.clone())]);
+    let report = compute_daily_report(&doc, &day);
+
+    assert_eq!(report.date, "2026-01-01");
+    let cal = report.intake.iter().find(|p| p.name == "calories").unwrap();
+    assert!((cal.value.amount - 538.0).abs() < 1e-6);
+    // No exercises → exercise list is empty, net equals intake.
+    assert!(report.exercise.is_empty());
+    let net_cal = report.net.iter().find(|p| p.name == "calories").unwrap();
+    assert!((net_cal.value.amount - 538.0).abs() < 1e-6);
+}
+
+#[test]
+fn daily_report_subtracts_exercise_calories() {
+    // eat 500 kcal, burn 200 kcal running → net 300 kcal
+    let ing = make_ingredient("rice", 100.0, "g", vec![("calories", 130.0, Some("kcal"))]);
+    // 100g rice = 130 kcal; eating ~385g → 500 kcal (approx)
+    let ex = make_exercise("running", 30.0, "min", vec![("calories", 200.0, Some("kcal"))]);
+    let day = Day {
+        date: "2026-02-01".to_string(),
+        items: vec![
+            DayItem::Ate(Ate {
+                food_alias: "rice".to_string(),
+                quantity: Quantity { amount: 100.0, unit: Some("g".to_string()) },
+            }),
+            DayItem::Exercised(Exercised {
+                exercise_alias: "running".to_string(),
+                quantity: Quantity { amount: 30.0, unit: Some("min".to_string()) },
+            }),
+        ],
+    };
+    let doc = make_document(vec![
+        Item::Ingredient(ing),
+        Item::Exercise(ex),
+        Item::Day(day.clone()),
+    ]);
+    let report = compute_daily_report(&doc, &day);
+
+    let intake_cal = report.intake.iter().find(|p| p.name == "calories").unwrap();
+    assert!((intake_cal.value.amount - 130.0).abs() < 1e-6);
+
+    let ex_cal = report.exercise.iter().find(|p| p.name == "calories").unwrap();
+    assert!((ex_cal.value.amount - 200.0).abs() < 1e-6);
+
+    let net_cal = report.net.iter().find(|p| p.name == "calories").unwrap();
+    // 130 - 200 = -70 kcal
+    assert!((net_cal.value.amount - (-70.0)).abs() < 1e-6);
+}
+
+#[test]
+fn compute_report_filters_by_date_range() {
+    let ing = make_ingredient("apple", 1.0, "unit", vec![("calories", 80.0, Some("kcal"))]);
+    let day1 = Day {
+        date: "2026-01-01".to_string(),
+        items: vec![DayItem::Ate(Ate {
+            food_alias: "apple".to_string(),
+            quantity: Quantity { amount: 1.0, unit: Some("unit".to_string()) },
+        })],
+    };
+    let day2 = Day {
+        date: "2026-01-15".to_string(),
+        items: vec![DayItem::Ate(Ate {
+            food_alias: "apple".to_string(),
+            quantity: Quantity { amount: 2.0, unit: Some("unit".to_string()) },
+        })],
+    };
+    let day3 = Day {
+        date: "2026-02-01".to_string(),
+        items: vec![DayItem::Ate(Ate {
+            food_alias: "apple".to_string(),
+            quantity: Quantity { amount: 3.0, unit: Some("unit".to_string()) },
+        })],
+    };
+    let doc = make_document(vec![
+        Item::Ingredient(ing),
+        Item::Day(day1),
+        Item::Day(day2),
+        Item::Day(day3),
+    ]);
+
+    // Filter to January only.
+    let reports = compute_report(&doc, Some("2026-01-01"), Some("2026-01-31"));
+    assert_eq!(reports.len(), 2);
+    assert_eq!(reports[0].date, "2026-01-01");
+    assert_eq!(reports[1].date, "2026-01-15");
+}
+
+#[test]
+fn compute_report_no_filter_returns_all_days() {
+    let ing = make_ingredient("apple", 1.0, "unit", vec![("calories", 80.0, Some("kcal"))]);
+    let day1 = Day { date: "2026-01-01".to_string(), items: vec![] };
+    let day2 = Day { date: "2026-03-01".to_string(), items: vec![] };
+    let doc = make_document(vec![
+        Item::Ingredient(ing),
+        Item::Day(day1),
+        Item::Day(day2),
+    ]);
+    let reports = compute_report(&doc, None, None);
+    assert_eq!(reports.len(), 2);
+}
+
+#[test]
+fn daily_report_unknown_food_skipped_gracefully() {
+    // If the food alias doesn't exist in the document, we get an empty report.
+    let day = Day {
+        date: "2026-01-01".to_string(),
+        items: vec![DayItem::Ate(Ate {
+            food_alias: "unicorn_dust".to_string(),
+            quantity: Quantity { amount: 10.0, unit: Some("g".to_string()) },
+        })],
+    };
+    let doc = make_document(vec![Item::Day(day.clone())]);
+    let report = compute_daily_report(&doc, &day);
+    assert!(report.intake.is_empty());
+    assert!(report.exercise.is_empty());
 }
