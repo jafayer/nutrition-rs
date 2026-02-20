@@ -65,13 +65,13 @@ pub enum Commands {
     Report {
         #[arg(
             long,
-            help = "Start date filter, inclusive (e.g. '2026-01-01')"
+            help = "Start date filter, inclusive (e.g. '2026-01-01'). Defaults to today."
         )]
         start: Option<String>,
 
         #[arg(
             long,
-            help = "End date filter, inclusive (e.g. '2026-01-31' or 'today')"
+            help = "End date filter, inclusive (e.g. '2026-01-31' or 'today'). Defaults to today."
         )]
         end: Option<String>,
 
@@ -168,11 +168,18 @@ async fn main() {
             };
 
             // Resolve "today" alias to the current date (YYYY-MM-DD).
+            // Both start and end default to today when not provided.
             let today = current_date_iso8601();
-            let start_str = start.as_deref();
-            let end_resolved = end.as_deref().map(|e| if e == "today" { today.as_str() } else { e });
+            let start_resolved = start
+                .as_deref()
+                .map(|s| if s == "today" { today.as_str() } else { s })
+                .unwrap_or(today.as_str());
+            let end_resolved = end
+                .as_deref()
+                .map(|e| if e == "today" { today.as_str() } else { e })
+                .unwrap_or(today.as_str());
 
-            let reports = compute_report(&document, start_str, end_resolved);
+            let reports = compute_report(&document, Some(start_resolved), Some(end_resolved));
 
             if reports.is_empty() {
                 println!("No @day entries found in the specified range.");
