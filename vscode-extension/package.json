@@ -57,6 +57,13 @@
         "language": "nutrition",
         "scopeName": "source.nutrition",
         "path": "./syntaxes/nutrition.tmLanguage.json"
+      },
+      {
+        "scopeName": "markdown.nutrition.codeblock",
+        "path": "./syntaxes/nutrition.markdown.tmLanguage.json",
+        "injectTo": [
+          "text.html.markdown"
+        ]
       }
     ],
     "documentFormatters": [
