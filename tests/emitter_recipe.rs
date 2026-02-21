@@ -1,7 +1,7 @@
 use nutrition_rs::emitters::recipe::RecipeEmitter;
 use nutrition_rs::emitters::emitter::CanEmit;
 use nutrition_rs::ast::ast::{Recipe, Quantity, IngredientLabel};
-use nutrition_rs::tree_sitter_ast::ast::parse;
+use nutrition_rs::parser::parser::parse;
 
 #[test]
 fn test_emit_recipe_with_ingredients() {

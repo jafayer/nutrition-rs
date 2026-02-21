@@ -24,7 +24,6 @@ impl SemanticAnalyzer {
         }
     }
 
-    /// Index the items in `document` for alias-based lookups and return it
     /// Index the items in `document` for alias-based lookups and return it.
     /// This method always succeeds and returns `Ok(document)`.
     pub fn analyze(&mut self, document: Document) -> Result<Document, String> {
@@ -109,62 +108,5 @@ impl SemanticAnalyzer {
 impl Default for SemanticAnalyzer {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl Clone for Ingredient {
-    fn clone(&self) -> Self {
-        Ingredient {
-            aliases: self.aliases.clone(),
-            quantities: self.quantities.clone(),
-            properties: self.properties.clone(),
-        }
-    }
-}
-
-impl Clone for Quantity {
-    fn clone(&self) -> Self {
-        Quantity {
-            amount: self.amount,
-            unit: self.unit.clone(),
-        }
-    }
-}
-
-impl Clone for Property {
-    fn clone(&self) -> Self {
-        Property {
-            name: self.name.clone(),
-            value: self.value.clone(),
-        }
-    }
-}
-
-impl Clone for Recipe {
-    fn clone(&self) -> Self {
-        Recipe {
-            aliases: self.aliases.clone(),
-            quantities: self.quantities.clone(),
-            ingredients: self.ingredients.clone(),
-        }
-    }
-}
-
-impl Clone for IngredientLabel {
-    fn clone(&self) -> Self {
-        IngredientLabel {
-            alias: self.alias.clone(),
-            quantity: self.quantity.clone(),
-        }
-    }
-}
-
-impl Clone for Exercise {
-    fn clone(&self) -> Self {
-        Exercise {
-            aliases: self.aliases.clone(),
-            quantities: self.quantities.clone(),
-            properties: self.properties.clone(),
-        }
     }
 }

@@ -1,7 +1,7 @@
 use nutrition_rs::emitters::ingredient::IngredientEmitter;
 use nutrition_rs::emitters::emitter::CanEmit;
 use nutrition_rs::ast::ast::{Ingredient, Quantity, Property};
-use nutrition_rs::tree_sitter_ast::ast::parse;
+use nutrition_rs::parser::parser::parse;
 
 #[test]
 fn test_emit_ingredient_with_properties() {

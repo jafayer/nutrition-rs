@@ -1,4 +1,4 @@
-use nutrition_rs::tree_sitter_ast::ast::parse;
+use nutrition_rs::parser::parser::parse;
 use std::fs;
 
 #[test]

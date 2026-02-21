@@ -1,6 +1,6 @@
 use nutrition_rs::ast::ast::*;
-use nutrition_rs::tree_sitter_ast::ast::parse;
-use nutrition_rs::tree_sitter_ast::semantic::SemanticAnalyzer;
+use nutrition_rs::parser::parser::parse;
+use nutrition_rs::parser::semantic::SemanticAnalyzer;
 use std::fs;
 
 #[test]

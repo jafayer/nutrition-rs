@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::BufReader;
 
 use crate::ast::ast::Document;
-use crate::tree_sitter_ast::ast::parse_reader;
+use crate::parser::parser::parse_reader;
 use crate::cli::env::get_default_file_from_env;
 
 pub fn load_tree(file_path: Option<&str>) -> Result<Document, String> {
