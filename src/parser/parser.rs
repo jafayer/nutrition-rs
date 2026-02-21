@@ -97,7 +97,12 @@ fn parse_ingredient_label<'a>() -> impl Parser<'a, &'a [Token], IngredientLabel>
 fn parse_recipe_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
     just(Token::AtRecipe)
         .ignore_then(parse_quantities_in_parens())
-        .then(parse_string())
+        .then(
+            parse_string()
+                .repeated()
+                .at_least(1)
+                .collect()
+        )
         .then(
             just(Token::LBrace)
                 .ignore_then(skip_block_ws())
@@ -112,7 +117,7 @@ fn parse_recipe_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
         )
         .map(|((quantities, aliases), ingredients)| {
             Item::Recipe(Recipe {
-                aliases: vec![aliases],
+                aliases,
                 quantities,
                 ingredients,
             })
@@ -126,10 +131,11 @@ fn parse_ate_item<'a>() -> impl Parser<'a, &'a [Token], Ate> + Clone {
             just(Token::LParen)
                 .ignore_then(parse_quantity())
                 .then_ignore(just(Token::RParen))
+                .or_not()
         )
         .map(|(food_alias, quantity)| Ate {
             food_alias,
-            quantity,
+            quantity: quantity.unwrap_or(Quantity { amount: 1.0, unit: None }),
         })
 }
 
@@ -140,10 +146,11 @@ fn parse_exercised_item<'a>() -> impl Parser<'a, &'a [Token], Exercised> + Clone
             just(Token::LParen)
                 .ignore_then(parse_quantity())
                 .then_ignore(just(Token::RParen))
+                .or_not()
         )
         .map(|(exercise_alias, quantity)| Exercised {
             exercise_alias,
-            quantity,
+            quantity: quantity.unwrap_or(Quantity { amount: 1.0, unit: None }),
         })
 }
 
@@ -214,18 +221,19 @@ fn parse_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
 }
 
 pub fn parser<'a>() -> impl Parser<'a, &'a [Token], Document> + Clone {
-    // Top-level items can be separated by one or more newlines and inline comments
-    let top_sep = any()
-        .filter(|tok| matches!(tok, Token::Newline | Token::Comment(_)))
-        .repeated()
-        .at_least(1)
-        .ignored();
+    // Newlines used as whitespace between top-level items
+    let newlines = just(Token::Newline).repeated().ignored();
 
-    parse_item()
-        .separated_by(top_sep)
-        .at_least(0)
-        .allow_trailing()
-        .collect()
-        .then_ignore(end())
-        .map(|items| Document { items })
+    // Each item is optionally preceded by newlines and followed by newlines.
+    // Comments are parsed as first-class items rather than consumed as
+    // whitespace, so that "// comment\n// comment" yields two Comment items.
+    newlines.clone().ignore_then(
+        parse_item()
+            .then_ignore(newlines)
+            .repeated()
+            .at_least(0)
+            .collect()
+    )
+    .then_ignore(end())
+    .map(|items| Document { items })
 }

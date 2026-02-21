@@ -1,13 +1,13 @@
-use tree_sitter::Parser;
+use chumsky::Parser as _;
+use logos::Logos;
 
-pub fn get_language() -> tree_sitter::Language {
-    tree_sitter_nutrition::LANGUAGE.into()
-}
+use crate::ast::ast::Document;
+use crate::lexer::lexer::Token;
+use crate::parser::parser::parser;
 
-pub fn parse(source: &str, old_tree: Option<&tree_sitter::Tree>) -> Option<tree_sitter::Tree> {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&get_language())
-        .expect("Error loading Nutrition grammar");
-    parser.parse(source, old_tree)
+/// Parse a nutrition source string into a [`Document`] using the native
+/// Chumsky parser.  Returns `None` if the input cannot be parsed.
+pub fn parse(source: &str) -> Option<Document> {
+    let tokens: Vec<Token> = Token::lexer(source).filter_map(Result::ok).collect();
+    parser().parse(tokens.as_slice()).into_output()
 }

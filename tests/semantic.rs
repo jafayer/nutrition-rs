@@ -1,12 +1,13 @@
 use nutrition_rs::ast::ast::*;
+use nutrition_rs::tree_sitter_ast::ast::parse;
 use nutrition_rs::tree_sitter_ast::semantic::SemanticAnalyzer;
 use std::fs;
 
 #[test]
 fn test_semantic_analyzer_initialization() {
     let analyzer = SemanticAnalyzer::new();
-    assert!(!analyzer.get_ingredient("test").is_some());
-    assert!(!analyzer.get_recipe("test").is_some());
+    assert!(analyzer.get_ingredient("test").is_none());
+    assert!(analyzer.get_recipe("test").is_none());
 }
 
 #[test]
@@ -16,14 +17,15 @@ fn test_parse_simple_ingredient() {
 }"#;
 
     let mut analyzer = SemanticAnalyzer::new();
-    if let Some(tree) = nutrition_rs::tree_sitter_ast::ast::parse(source, None) {
-        let root = tree.root_node();
-        if let Ok(doc) = analyzer.analyze(root, source) {
+    if let Some(doc) = parse(source) {
+        if let Ok(doc) = analyzer.analyze(doc) {
             assert!(!doc.items.is_empty());
             // Check that ingredient was registered
             let ingredient = analyzer.get_ingredient("test");
             assert!(ingredient.is_some());
         }
+    } else {
+        panic!("Failed to parse source");
     }
 }
 
@@ -35,9 +37,8 @@ fn test_ingredient_with_aliases() {
 }"#;
 
     let mut analyzer = SemanticAnalyzer::new();
-    if let Some(tree) = nutrition_rs::tree_sitter_ast::ast::parse(source, None) {
-        let root = tree.root_node();
-        if let Ok(_doc) = analyzer.analyze(root, source) {
+    if let Some(doc) = parse(source) {
+        if let Ok(_doc) = analyzer.analyze(doc) {
             // All aliases should resolve to the same ingredient
             let chickpeas = analyzer.get_ingredient("chickpeas");
             let chickpea = analyzer.get_ingredient("chickpea");
@@ -47,35 +48,32 @@ fn test_ingredient_with_aliases() {
             assert!(chickpea.is_some());
             assert!(garbanzo.is_some());
         }
+    } else {
+        panic!("Failed to parse source");
     }
 }
 
 #[test]
 fn test_quantity_parsing() {
-    // Create a simple quantity node and parse it
-
     let quantity = Quantity {
         amount: 100.0,
         unit: Some("g".to_string()),
     };
     assert_eq!(quantity.amount, 100.0);
     assert_eq!(quantity.unit.as_deref(), Some("g"));
-
 }
 
 #[test]
 fn test_recipe_ingredient_resolution() {
     let mut analyzer = SemanticAnalyzer::new();
 
-    // Parse an ingredient first
     let ingredient_source = r#"@ingredient(100g) "chickpeas" {
   calories: 269
   protein: 14.5g
 }"#;
 
-    if let Some(tree) = nutrition_rs::tree_sitter_ast::ast::parse(ingredient_source, None) {
-        let root = tree.root_node();
-        let _ = analyzer.analyze(root, ingredient_source);
+    if let Some(doc) = parse(ingredient_source) {
+        let _ = analyzer.analyze(doc);
     }
 
     // Now verify the ingredient is registered
@@ -89,16 +87,17 @@ fn test_day_parsing() {
 }"#;
 
     let mut analyzer = SemanticAnalyzer::new();
-    if let Some(tree) = nutrition_rs::tree_sitter_ast::ast::parse(source, None) {
-        let root = tree.root_node();
-        if let Ok(doc) = analyzer.analyze(root, source) {
+    if let Some(doc) = parse(source) {
+        if let Ok(doc) = analyzer.analyze(doc) {
             let days = doc
                 .items
                 .iter()
                 .filter(|item| matches!(item, Item::Day(_)))
                 .count();
-            assert!(days > 0 || doc.items.len() > 0);
+            assert!(days > 0);
         }
+    } else {
+        panic!("Failed to parse source");
     }
 }
 
@@ -108,10 +107,8 @@ fn test_complex_document_analysis() {
         .expect("Failed to read test.nutrition");
 
     let mut analyzer = SemanticAnalyzer::new();
-    if let Some(tree) = nutrition_rs::tree_sitter_ast::ast::parse(&source, None) {
-        let root = tree.root_node();
-        if let Ok(doc) = analyzer.analyze(root, &source) {
-            // Count different item types
+    if let Some(doc) = parse(&source) {
+        if let Ok(doc) = analyzer.analyze(doc) {
             let ingredients = doc
                 .items
                 .iter()
@@ -128,16 +125,15 @@ fn test_complex_document_analysis() {
                 .filter(|item| matches!(item, Item::Day(_)))
                 .count();
 
-            // The test.nutrition file should have multiple items
             assert!(ingredients > 0 || recipes > 0 || days > 0 || !doc.items.is_empty());
         }
+    } else {
+        panic!("Failed to parse test.nutrition");
     }
 }
 
 #[test]
-#[cfg(test)]
 fn test_quantity_with_spaces() {
-
     let doc = Document {
         items: vec![Item::Ingredient(Ingredient {
             aliases: vec!["water".to_string()],
@@ -157,9 +153,7 @@ fn test_quantity_with_spaces() {
 }
 
 #[test]
-#[cfg(test)]
 fn test_fractional_quantities() {
-
     let doc = Document {
         items: vec![Item::Ingredient(Ingredient {
             aliases: vec!["pizza".to_string()],
@@ -244,7 +238,6 @@ fn test_multiple_aliases_resolution() {
 
     if let Item::Ingredient(ing) = &doc.items[0] {
         assert_eq!(ing.aliases.len(), 3);
-        // All aliases should refer to the same ingredient
         assert!(ing.aliases.contains(&"chickpeas".to_string()));
         assert!(ing.aliases.contains(&"chickpea".to_string()));
         assert!(ing.aliases.contains(&"garbanzo beans".to_string()));
