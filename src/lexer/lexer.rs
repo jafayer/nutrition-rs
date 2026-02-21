@@ -1,4 +1,5 @@
 use logos::Logos;
+use std::fmt;
 use std::ops::Range;
 
 pub type Span = Range<usize>;
@@ -62,22 +63,34 @@ pub enum Token {
     Error,
 }
 
-// impl Token {
-//     pub fn lex_with_spans(src: &str) -> Vec<SpannedToken> {
-//         let mut lex = Token::lexer(src);
-//         let mut out = Vec::new();
-//         while let Some(tok) = lex.next() {
-//             match tok {
-//                 Ok(t) => {
-//                     let span = lex.span(); // byte range in `src`
-//                     out.push((t, span));
-//                 }
-//                 Err(_) => {
-//                     // Skip errors for now
-//                     continue;
-//                 }
-//             }
-//         }
-//         out
-//     }
-// }
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Token::AtUnit => write!(f, "@unit"),
+            Token::AtProperty => write!(f, "@property"),
+            Token::AtIngredient => write!(f, "@ingredient"),
+            Token::AtFood => write!(f, "@food"),
+            Token::AtRecipe => write!(f, "@recipe"),
+            Token::AtExercise => write!(f, "@exercise"),
+            Token::AtDay => write!(f, "@day"),
+            Token::AtAte => write!(f, "@ate"),
+            Token::AtExercised => write!(f, "@exercised"),
+            Token::LBrace => write!(f, "{{"),
+            Token::RBrace => write!(f, "}}"),
+            Token::LParen => write!(f, "("),
+            Token::RParen => write!(f, ")"),
+            Token::Colon => write!(f, ":"),
+            Token::Comma => write!(f, ","),
+            Token::Equals => write!(f, "="),
+            Token::String(s) => write!(f, "\"{}\"", s),
+            Token::Number(n) => write!(f, "{}", n),
+            Token::Bool(b) => write!(f, "{}", b),
+            Token::Identifier(id) => write!(f, "{}", id),
+            Token::MealLabel(l) => write!(f, "{}", l),
+            // Comment tokens store the full `//…` text including the leading `//`.
+            Token::Comment(c) => write!(f, "{}", c),
+            Token::Newline => write!(f, "<newline>"),
+            Token::Error => write!(f, "<error>"),
+        }
+    }
+}

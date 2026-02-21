@@ -100,16 +100,43 @@ async fn main() {
     match cli.command {
         Commands::Validate { show_tree } => {
             let file = require_file(&cli.file);
-            file_loader::load_tree(Some(&file))
-                .map(|document| {
-                    println!("File '{}' is valid.", file);
+            let (document, errors) = file_loader::load_tree_with_errors(&file);
+
+            // Print every specific parse error so the user knows exactly what
+            // is wrong and on which line.
+            for err in &errors {
+                eprintln!("  error: {}", err);
+            }
+
+            match document {
+                Some(doc) if errors.is_empty() => {
+                    let item_count = doc.items.iter()
+                        .filter(|i| !matches!(i, nutrition_rs::ast::ast::Item::Comment(_)))
+                        .count();
+                    println!("✓ '{}' is valid ({} item(s)).", file, item_count);
                     if show_tree {
-                        print_document(document);
+                        print_document(doc);
                     }
-                })
-                .unwrap_or_else(|err| {
-                    eprintln!("Validation failed for file '{}': {}", file, err);
-                });
+                }
+                Some(doc) => {
+                    eprintln!(
+                        "✗ '{}' has {} parse error(s); {} item(s) recovered.",
+                        file,
+                        errors.len(),
+                        doc.items.iter()
+                            .filter(|i| !matches!(i, nutrition_rs::ast::ast::Item::Comment(_)))
+                            .count()
+                    );
+                    if show_tree {
+                        print_document(doc);
+                    }
+                    std::process::exit(1);
+                }
+                None => {
+                    eprintln!("✗ '{}' could not be parsed.", file);
+                    std::process::exit(1);
+                }
+            }
         }
 
         Commands::Generate { generate_command } => match generate_command {

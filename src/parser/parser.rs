@@ -274,3 +274,256 @@ pub fn parse_reader<R: BufRead>(reader: R) -> Option<Document> {
     }
     parser().parse(tokens.as_slice()).into_output()
 }
+
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Error-recovery parser and reporting helpers
+// ---------------------------------------------------------------------------
+
+/// Returns the human-readable name of the declaration that starts with `tok`.
+fn declaration_name(tok: &Token) -> &'static str {
+    match tok {
+        Token::AtIngredient | Token::AtFood => "@ingredient",
+        Token::AtRecipe => "@recipe",
+        Token::AtExercise => "@exercise",
+        Token::AtDay => "@day",
+        Token::AtAte => "@ate",
+        Token::AtExercised => "@exercised",
+        Token::Comment(_) => "comment",
+        _ => "declaration",
+    }
+}
+
+/// Returns `true` for tokens that begin a top-level declaration.
+fn is_top_level_start(tok: &Token) -> bool {
+    matches!(
+        tok,
+        Token::AtIngredient
+            | Token::AtFood
+            | Token::AtRecipe
+            | Token::AtExercise
+            | Token::AtDay
+            | Token::Comment(_)
+    )
+}
+
+/// Build a `token_index → 1-based line number` mapping.
+///
+/// Each [`Token::Newline`] increments the line counter for subsequent tokens.
+fn token_line_map(tokens: &[Token]) -> Vec<usize> {
+    let mut map = Vec::with_capacity(tokens.len());
+    let mut line = 1usize;
+    for tok in tokens {
+        map.push(line);
+        if matches!(tok, Token::Newline) {
+            line += 1;
+        }
+    }
+    map
+}
+
+/// Split a flat token slice into per-declaration chunks.
+///
+/// Splitting rules:
+/// * `@ingredient`, `@food`, `@recipe`, `@exercise`, `@day` **always** start a
+///   new chunk, even when the brace depth is > 0.  These keywords cannot
+///   legitimately appear inside a `{…}` block, so seeing one at depth > 0
+///   signals an unclosed block from the previous declaration.  Force-splitting
+///   here allows the subsequent declaration to be parsed correctly.
+/// * `@ate` and `@exercised` are **not** split points because they can appear
+///   legitimately inside a `@day { … }` block.
+/// * Comments at brace depth 0 form their own single-token chunks.
+/// * A chunk that ends with a `}` that brings depth back to 0 is closed there.
+///
+/// Returns `(start, end)` index pairs (exclusive end) into `tokens`.
+fn split_chunks(tokens: &[Token]) -> Vec<(usize, usize)> {
+    let mut chunks: Vec<(usize, usize)> = Vec::new();
+    let mut chunk_start: Option<usize> = None;
+    let mut brace_depth = 0usize;
+
+    for (i, tok) in tokens.iter().enumerate() {
+        match tok {
+            Token::LBrace => brace_depth += 1,
+            Token::RBrace => {
+                brace_depth = brace_depth.saturating_sub(1);
+                // Closing the outermost brace ends this chunk.
+                if brace_depth == 0 {
+                    if let Some(start) = chunk_start {
+                        chunks.push((start, i + 1));
+                        chunk_start = None;
+                    }
+                }
+            }
+            // These keywords CANNOT appear inside blocks → always force a split.
+            Token::AtIngredient
+            | Token::AtFood
+            | Token::AtRecipe
+            | Token::AtExercise
+            | Token::AtDay => {
+                if let Some(start) = chunk_start {
+                    chunks.push((start, i));
+                }
+                // Reset brace depth: the previous block was unclosed.
+                brace_depth = 0;
+                chunk_start = Some(i);
+            }
+            // Comments at depth 0 are standalone single-token chunks.
+            Token::Comment(_) if brace_depth == 0 => {
+                if let Some(start) = chunk_start {
+                    chunks.push((start, i));
+                }
+                chunks.push((i, i + 1));
+                chunk_start = None;
+            }
+            _ => {}
+        }
+    }
+
+    // Any tokens after the last closed block form a trailing chunk.
+    if let Some(start) = chunk_start {
+        if start < tokens.len() {
+            chunks.push((start, tokens.len()));
+        }
+    }
+
+    // Drop chunks that contain nothing but newline tokens.
+    chunks.retain(|(s, e)| {
+        tokens[*s..*e]
+            .iter()
+            .any(|t| !matches!(t, Token::Newline))
+    });
+
+    chunks
+}
+
+/// Parse a token chunk produced by [`split_chunks`] and return the items it
+/// contains, or an error string describing what failed.
+fn parse_chunk(chunk: &[Token], start_line: usize) -> Result<Vec<Item>, String> {
+    // Append a trailing Newline so `parser()` sees a clean end-of-stream.
+    let mut padded: Vec<Token> = chunk.to_vec();
+    padded.push(Token::Newline);
+    match parser().parse(padded.as_slice()).into_output() {
+        Some(doc) => Ok(doc.items),
+        None => {
+            // Build a descriptive message from the declaration keyword.
+            let decl = chunk
+                .iter()
+                .find(|t| is_top_level_start(t))
+                .map(declaration_name)
+                .unwrap_or("declaration");
+            Err(format!("line {start_line}: malformed {decl}"))
+        }
+    }
+}
+
+/// Parse a nutrition source string, returning both the (possibly partial)
+/// [`Document`] and a list of human-readable error messages.
+///
+/// Recovery is performed at declaration-boundary level: when one declaration
+/// fails to parse, its error is recorded and parsing continues with the next
+/// declaration.  This ensures a single malformed block does not prevent the
+/// rest of the file from being processed.
+///
+/// Returns `(None, errors)` only when the input is so badly formed that not
+/// even a partial document could be produced.
+pub fn parse_with_errors(source: &str) -> (Option<Document>, Vec<String>) {
+    let tokens: Vec<Token> = Token::lexer(source).filter_map(Result::ok).collect();
+    if tokens.is_empty() {
+        return (Some(Document { items: vec![] }), vec![]);
+    }
+    let line_map = token_line_map(&tokens);
+    let chunks = split_chunks(&tokens);
+
+    // If the file has non-whitespace content but no recognisable declarations,
+    // report that nothing was understood rather than silently returning empty.
+    let has_content = tokens
+        .iter()
+        .any(|t| !matches!(t, Token::Newline));
+    if has_content && chunks.is_empty() {
+        return (None, vec!["no recognizable declarations found".to_string()]);
+    }
+
+    let mut items: Vec<Item> = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
+
+    for (start, end) in &chunks {
+        let chunk = &tokens[*start..*end];
+        let start_line = line_map.get(*start).copied().unwrap_or(1);
+        match parse_chunk(chunk, start_line) {
+            Ok(chunk_items) => items.extend(chunk_items),
+            Err(e) => errors.push(e),
+        }
+    }
+
+    if items.is_empty() && !errors.is_empty() {
+        (None, errors)
+    } else {
+        (Some(Document { items }), errors)
+    }
+}
+
+/// Parse a nutrition document from a [`BufRead`] source with full error
+/// reporting and per-declaration recovery.
+///
+/// Each line is lexed individually (line buffers are dropped after lexing) and
+/// a [`Token::Newline`] is injected between lines to preserve correct
+/// whitespace semantics.  Line numbers are tracked during streaming so that
+/// error messages reference the correct source line.
+pub fn parse_reader_with_errors<R: BufRead>(reader: R) -> (Option<Document>, Vec<String>) {
+    let mut tokens: Vec<Token> = Vec::new();
+    let mut line_numbers: Vec<usize> = Vec::new();
+    // Starts at 0; the loop increments it to 1 before processing the first line,
+    // so the first real line gets line number 1.
+    let mut line_num = 0usize;
+
+    for line_result in reader.lines() {
+        line_num += 1;
+        match line_result {
+            Ok(line) => {
+                let line_tokens: Vec<Token> =
+                    Token::lexer(&line).filter_map(Result::ok).collect();
+                let count = line_tokens.len();
+                line_numbers.extend(std::iter::repeat(line_num).take(count));
+                tokens.extend(line_tokens);
+                tokens.push(Token::Newline);
+                line_numbers.push(line_num);
+            }
+            Err(e) => {
+                return (
+                    None,
+                    vec![format!("IO error reading line {line_num}: {e}")],
+                );
+            }
+        }
+    }
+
+    if tokens.is_empty() {
+        return (Some(Document { items: vec![] }), vec![]);
+    }
+
+    let has_content = tokens
+        .iter()
+        .any(|t| !matches!(t, Token::Newline));
+    let chunks = split_chunks(&tokens);
+    if has_content && chunks.is_empty() {
+        return (None, vec!["no recognizable declarations found".to_string()]);
+    }
+    let mut items: Vec<Item> = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
+
+    for (start, end) in &chunks {
+        let chunk = &tokens[*start..*end];
+        let start_line = line_numbers.get(*start).copied().unwrap_or(1);
+        match parse_chunk(chunk, start_line) {
+            Ok(chunk_items) => items.extend(chunk_items),
+            Err(e) => errors.push(e),
+        }
+    }
+
+    if items.is_empty() && !errors.is_empty() {
+        (None, errors)
+    } else {
+        (Some(Document { items }), errors)
+    }
+}
