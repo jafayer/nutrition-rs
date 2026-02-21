@@ -341,3 +341,96 @@ fn diagnostics_empty_source_no_diagnostics() {
     assert!(diags.is_empty());
     assert!(doc.unwrap().items.is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// note_span / fine-grained diagnostic tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn diagnostic_day_block_flags_unexpected_string() {
+    // "chickpeas"(1 cup) is not valid in a @day block.
+    let source = r#"@day "2026-01-01" {
+  @ate "chickpea stew"(2)
+  "chickpeas"(1 cup)
+}"#;
+    let (doc, diags) = parse_with_diagnostics(source);
+    assert!(doc.is_some() || !diags.is_empty());
+    assert!(!diags.is_empty(), "should report an error");
+
+    let d = &diags[0];
+    // The note_span should point inside the block (after the opening brace),
+    // not at the declaration header (byte 0).
+    let note = d.note_span.as_ref().expect("note_span should be set");
+    assert!(note.start > 0, "note should not point to the header");
+
+    // The note message should mention "chickpeas".
+    let msg = d.note_message.as_deref().expect("note_message should be set");
+    assert!(
+        msg.contains("chickpeas"),
+        "note message should mention 'chickpeas', got: {msg}"
+    );
+    assert!(
+        msg.contains("@day"),
+        "note message should mention '@day', got: {msg}"
+    );
+}
+
+#[test]
+fn diagnostic_day_block_note_span_within_source() {
+    let source = r#"@day "2026-01-01" {
+  @ate "chickpea stew"(2)
+  "chickpeas"(1 cup)
+}"#;
+    let (_, diags) = parse_with_diagnostics(source);
+    assert!(!diags.is_empty());
+    let d = &diags[0];
+    if let Some(ref note_span) = d.note_span {
+        assert!(
+            note_span.start <= source.len(),
+            "note_span.start out of bounds"
+        );
+        assert!(
+            note_span.end <= source.len(),
+            "note_span.end out of bounds"
+        );
+        // The note span should cover "chickpeas"(1 cup) — verify start byte
+        // points into the word "chickpeas" (after the opening `"`).
+        let snippet = &source[note_span.clone()];
+        assert!(
+            snippet.contains("chickpeas"),
+            "note span should cover 'chickpeas', got: {snippet:?}"
+        );
+    }
+}
+
+#[test]
+fn diagnostic_ingredient_block_flags_unexpected_string() {
+    // A string literal ("chickpeas") is not a valid property in an ingredient block.
+    let source = r#"@ingredient(100g) "oil" {
+  calories: 900
+  "not a property"
+}"#;
+    let (_, diags) = parse_with_diagnostics(source);
+    assert!(!diags.is_empty(), "should report an error");
+    let d = &diags[0];
+    let note = d.note_span.as_ref().expect("note_span should be set");
+    assert!(note.start > 0, "note should not point to the header");
+    let msg = d.note_message.as_deref().expect("note_message should be set");
+    assert!(
+        msg.contains("@ingredient"),
+        "note should mention @ingredient, got: {msg}"
+    );
+}
+
+#[test]
+fn diagnostic_header_only_when_no_brace() {
+    // No `{` means no body to scan — note_span should be None.
+    let source = "@ingredient MISSING_EVERYTHING";
+    let (_, diags) = parse_with_diagnostics(source);
+    assert!(!diags.is_empty());
+    // note_span should be None since there's no body.
+    assert!(
+        diags[0].note_span.is_none(),
+        "no brace → no note_span expected"
+    );
+}

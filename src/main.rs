@@ -114,19 +114,32 @@ async fn main() {
             // Render each diagnostic as a rich ariadne report with source
             // context, arrows, and colour highlighting.
             for diag in &diagnostics {
-                Report::build(ReportKind::Error, file.as_str(), diag.byte_span.start)
-                    .with_message(&diag.message)
-                    .with_label(
-                        Label::new((file.as_str(), diag.byte_span.clone()))
-                            .with_message(format!(
-                                "this {} could not be parsed",
-                                diag.declaration_kind
-                            ))
-                            .with_color(Color::Red),
-                    )
-                    .with_help(
-                        "check that all required fields are present and the block is closed with `}`",
-                    )
+                let mut report =
+                    Report::build(ReportKind::Error, file.as_str(), diag.byte_span.start)
+                        .with_message(&diag.message)
+                        .with_label(
+                            Label::new((file.as_str(), diag.byte_span.clone()))
+                                .with_message(format!(
+                                    "this {} could not be parsed",
+                                    diag.declaration_kind
+                                ))
+                                .with_color(Color::Red),
+                        );
+
+                // If we know the specific token that caused the failure,
+                // add a second label pointing directly at it.
+                if let (Some(note_span), Some(note_msg)) =
+                    (&diag.note_span, &diag.note_message)
+                {
+                    report = report.with_label(
+                        Label::new((file.as_str(), note_span.clone()))
+                            .with_message(note_msg)
+                            .with_color(Color::Yellow),
+                    );
+                }
+
+                report
+                    .with_help(help_for_kind(diag.declaration_kind))
                     .finish()
                     .eprint((file.as_str(), Source::from(&source)))
                     .unwrap();
@@ -360,4 +373,23 @@ fn require_file(file: &Option<String>) -> String {
 
 fn print_document(node: nutrition_rs::ast::ast::Document) {
     println!("{:#?}", node);
+}
+
+/// Return a declaration-specific help message for ariadne's `with_help`.
+fn help_for_kind(kind: &str) -> &'static str {
+    match kind {
+        "@day" => {
+            "@day blocks may only contain `@ate` and `@exercised` entries"
+        }
+        "@ingredient" | "@food" => {
+            "ingredients must have at least one quantity, one alias, and a `{ property: value }` body"
+        }
+        "@recipe" => {
+            "recipes must have at least one quantity, one alias, and a body with `\"alias\"(quantity)` entries"
+        }
+        "@exercise" => {
+            "exercises must have at least one quantity, one alias, and a `{ property: value }` body"
+        }
+        _ => "check that all required fields are present and the block is closed with `}`",
+    }
 }

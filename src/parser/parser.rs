@@ -532,17 +532,24 @@ pub fn parse_reader_with_errors<R: BufRead>(reader: R) -> (Option<Document>, Vec
 // Structured diagnostics with byte-offset spans (for ariadne rendering)
 // ---------------------------------------------------------------------------
 
-/// A parse error carrying both a message and the byte span of the failing
-/// declaration in the original source string.  This is the structured form
-/// of error that enables rich diagnostic rendering (arrows, source snippets,
-/// colour highlighting) via external crates such as `ariadne`.
+/// A parse error carrying both the span of the failing declaration **header**
+/// and (when discoverable) the span of the specific token inside the block
+/// that caused the failure.  Both spans reference byte offsets in the original
+/// source string, enabling rich diagnostic rendering (arrows, source snippets,
+/// colour highlighting) via `ariadne`.
 pub struct ParseDiagnostic {
-    /// Short description of what failed (e.g. `"malformed @ingredient declaration"`).
+    /// Short top-level message (e.g. `"malformed @day declaration"`).
     pub message: String,
-    /// Byte span of the failing region in the original source string.
+    /// Byte span of the declaration header line (primary label).
     pub byte_span: std::ops::Range<usize>,
-    /// The declaration keyword that introduced the failing block (e.g. `"@ingredient"`).
+    /// The declaration keyword (e.g. `"@day"`).
     pub declaration_kind: &'static str,
+    /// Byte span of the specific token (or expression) that caused the failure,
+    /// when it can be determined.  If `None`, only the header is highlighted.
+    pub note_span: Option<std::ops::Range<usize>>,
+    /// Human-readable note to show at `note_span`,
+    /// e.g. `"unexpected \"chickpeas\" in @day block"`.
+    pub note_message: Option<String>,
 }
 
 /// Lex `source` and return the tokens paired with their byte spans.
@@ -562,12 +569,182 @@ fn lex_with_spans(source: &str) -> (Vec<Token>, Vec<std::ops::Range<usize>>) {
     (tokens, spans)
 }
 
+/// Compute the byte span covering from the token at `tok_idx` in the chunk to
+/// the end of its line (i.e. up to and including the last non-Newline token on
+/// the same line).  This highlights the whole offending expression rather than
+/// just its first token.
+fn note_byte_span(
+    chunk: &[Token],
+    tok_idx: usize,
+    chunk_global_start: usize,
+    spans: &[std::ops::Range<usize>],
+) -> Option<std::ops::Range<usize>> {
+    if chunk.is_empty() {
+        return None;
+    }
+    let clamped = tok_idx.min(chunk.len() - 1);
+    let global_start_idx = chunk_global_start + clamped;
+    let note_start = spans.get(global_start_idx)?.start;
+
+    // Scan forward until we hit a Newline to find the line end.
+    let last_on_line = chunk[clamped..]
+        .iter()
+        .enumerate()
+        .take_while(|(_, t)| !matches!(t, Token::Newline))
+        .last()
+        .map(|(offset, _)| clamped + offset)
+        .unwrap_or(clamped);
+
+    let note_end = spans
+        .get(chunk_global_start + last_on_line)
+        .map(|s| s.end)
+        .unwrap_or(note_start + 1);
+
+    Some(note_start..note_end)
+}
+
+/// Scan the body of a block (tokens after `{`) for the first token that cannot
+/// legitimately appear at the top level of that block type.
+///
+/// Returns the byte span and an explanatory message, or `None` if no
+/// unexpected token is found (e.g. the error is in the header rather than
+/// the body).
+///
+/// This scan is intentionally simple: it looks for tokens that can *start* a
+/// valid body entry for the given declaration kind.  Tokens that are part of
+/// an already-started entry (strings after `@ate`, numbers inside parens, etc.)
+/// are skipped so only truly out-of-place tokens are flagged.
+fn find_unexpected_in_body(
+    chunk: &[Token],
+    chunk_global_start: usize,
+    spans: &[std::ops::Range<usize>],
+    decl: &str,
+) -> Option<(std::ops::Range<usize>, String)> {
+    // Find the opening `{` of the block body.
+    let body_start = chunk.iter().position(|t| matches!(t, Token::LBrace))?;
+    let body = &chunk[body_start + 1..];
+    if body.is_empty() {
+        return None;
+    }
+
+    let mut i = 0usize;
+    while i < body.len() {
+        let tok = &body[i];
+        let chunk_idx = body_start + 1 + i;
+
+        let is_valid_entry_start = match decl {
+            "@day" => matches!(
+                tok,
+                Token::AtAte
+                    | Token::AtExercised
+                    | Token::Newline
+                    | Token::Comment(_)
+                    | Token::Comma
+                    | Token::RBrace
+            ),
+            "@ingredient" | "@food" | "@exercise" => matches!(
+                tok,
+                Token::Identifier(_)
+                    | Token::Newline
+                    | Token::Comment(_)
+                    | Token::Comma
+                    | Token::RBrace
+            ),
+            "@recipe" => matches!(
+                tok,
+                Token::String(_)
+                    | Token::Newline
+                    | Token::Comment(_)
+                    | Token::Comma
+                    | Token::RBrace
+            ),
+            _ => true,
+        };
+
+        if !is_valid_entry_start {
+            let note_span =
+                note_byte_span(chunk, chunk_idx, chunk_global_start, spans)?;
+            let expected_hint = match decl {
+                "@day" => "`@ate`, `@exercised`, or `}`",
+                "@ingredient" | "@food" | "@exercise" => {
+                    "a property name (e.g. `calories: 100`), or `}`"
+                }
+                "@recipe" => {
+                    "an ingredient alias (e.g. `\"chickpeas\"(200g)`), or `}`"
+                }
+                _ => "a valid entry, or `}`",
+            };
+            return Some((
+                note_span,
+                format!(
+                    "unexpected `{tok}` in {decl} block — expected {expected_hint}"
+                ),
+            ));
+        }
+
+        // Skip ahead past the current valid entry so that tokens that are
+        // *part* of a valid entry are not re-inspected at the top level.
+        match tok {
+            Token::AtAte | Token::AtExercised => {
+                i += 1; // skip @ate/@exercised keyword
+                // skip alias string
+                if i < body.len() && matches!(body[i], Token::String(_)) {
+                    i += 1;
+                }
+                // skip optional (quantity)
+                if i < body.len() && matches!(body[i], Token::LParen) {
+                    while i < body.len() && !matches!(body[i], Token::RParen) {
+                        i += 1;
+                    }
+                    if i < body.len() {
+                        i += 1; // consume RParen
+                    }
+                }
+            }
+            Token::Identifier(_) => {
+                // property: identifier colon number [unit]
+                i += 1;
+                if i < body.len() && matches!(body[i], Token::Colon) {
+                    i += 1;
+                }
+                if i < body.len() && matches!(body[i], Token::Number(_)) {
+                    i += 1;
+                }
+                if i < body.len() && matches!(body[i], Token::Identifier(_)) {
+                    i += 1;
+                }
+            }
+            Token::String(_) => {
+                // ingredient label: "alias"(quantity)
+                i += 1;
+                if i < body.len() && matches!(body[i], Token::LParen) {
+                    while i < body.len() && !matches!(body[i], Token::RParen) {
+                        i += 1;
+                    }
+                    if i < body.len() {
+                        i += 1; // consume RParen
+                    }
+                }
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+
+    None
+}
+
 /// Parse a nutrition source string, returning both the (possibly partial)
 /// [`Document`] and a list of [`ParseDiagnostic`] values that carry the
 /// byte-span information needed for rich diagnostic rendering.
 ///
-/// Behaviour mirrors [`parse_with_errors`] except that errors are returned as
-/// structured `ParseDiagnostic` values rather than plain strings.
+/// For each failing declaration, the token body is scanned to find the first
+/// token that cannot appear at the top level of that block type (e.g.
+/// `"chickpeas"(1 cup)` inside a `@day` block that only accepts `@ate` and
+/// `@exercised` entries).  This token's byte span is stored in
+/// [`ParseDiagnostic::note_span`] so callers can render two ariadne labels:
+/// one on the declaration header and one on the specific offending token.
 pub fn parse_with_diagnostics(source: &str) -> (Option<Document>, Vec<ParseDiagnostic>) {
     let (tokens, spans) = lex_with_spans(source);
     if tokens.is_empty() {
@@ -584,28 +761,25 @@ pub fn parse_with_diagnostics(source: &str) -> (Option<Document>, Vec<ParseDiagn
                 message: "no recognizable declarations found".to_string(),
                 byte_span: 0..source.len().max(1),
                 declaration_kind: "declaration",
+                note_span: None,
+                note_message: None,
             }],
         );
     }
 
-    // Build a line map so parse_chunk receives a correct 1-based line number.
     let line_map = token_line_map(&tokens);
-
     let mut items: Vec<Item> = Vec::new();
     let mut diagnostics: Vec<ParseDiagnostic> = Vec::new();
 
     for (start, end) in &chunks {
         let chunk = &tokens[*start..*end];
 
-        // Byte span: from the start of the first token to the end of the last.
+        // Header span: first line of the declaration only.
         let byte_start = spans.get(*start).map(|s| s.start).unwrap_or(0);
         let byte_end = spans
             .get(end.saturating_sub(1))
             .map(|s| s.end)
             .unwrap_or(byte_start + 1);
-
-        // For the label in ariadne, only highlight to the end of the first
-        // line of the declaration so multi-line blocks stay readable.
         let first_newline_byte = chunk
             .iter()
             .enumerate()
@@ -613,21 +787,30 @@ pub fn parse_with_diagnostics(source: &str) -> (Option<Document>, Vec<ParseDiagn
             .and_then(|(i, _)| spans.get(*start + i))
             .map(|s| s.start)
             .unwrap_or(byte_end);
-        let label_span = byte_start..first_newline_byte;
+        let header_span = byte_start..first_newline_byte;
+
+        let decl = chunk
+            .iter()
+            .find(|t| is_top_level_start(t))
+            .map(declaration_name)
+            .unwrap_or("declaration");
 
         let start_line = line_map.get(*start).copied().unwrap_or(1);
         match parse_chunk(chunk, start_line) {
             Ok(chunk_items) => items.extend(chunk_items),
             Err(_) => {
-                let decl = chunk
-                    .iter()
-                    .find(|t| is_top_level_start(t))
-                    .map(declaration_name)
-                    .unwrap_or("declaration");
+                // Try to locate the specific offending token in the body.
+                let (note_span, note_message) =
+                    find_unexpected_in_body(chunk, *start, &spans, decl)
+                        .map(|(s, m)| (Some(s), Some(m)))
+                        .unwrap_or((None, None));
+
                 diagnostics.push(ParseDiagnostic {
                     message: format!("malformed {} declaration", decl),
-                    byte_span: label_span,
+                    byte_span: header_span,
                     declaration_kind: decl,
+                    note_span,
+                    note_message,
                 });
             }
         }
