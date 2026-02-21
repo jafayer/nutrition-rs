@@ -6,6 +6,9 @@ A plain-text nutrition tracking tool built around the **Nutrition language** —
 - A **Rust CLI** (`nutrition`) for validating, querying, and reporting on `.nutrition` files
 - A **VS Code extension** with syntax highlighting, navigation, and formatting support
 
+> [!WARNING]
+> **Early development — expect breaking changes.** The Nutrition language spec and the CLI API are both unstable. Syntax, keywords, command names, flags, and output formats may change in any release without notice. The project is not yet suitable for production use.
+
 ---
 
 ## Table of Contents
