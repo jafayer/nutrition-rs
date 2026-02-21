@@ -44,7 +44,7 @@ Nutrition files use the `.nutrition` extension and contain a series of **declara
 
 A `.nutrition` file is a plain-text document consisting of top-level declarations separated by whitespace. Order matters only for readability — the parser collects all declarations before computing reports.
 
-```
+```nutrition
 // This is a nutrition file
 
 @ingredient(100g) "oats" {
@@ -68,7 +68,7 @@ A `.nutrition` file is a plain-text document consisting of top-level declaration
 
 Line comments begin with `//` and may appear anywhere on a line.
 
-```
+```nutrition
 // This is a full-line comment
 @ingredient(100g) "sugar" { // inline comment
   calories: 387 // kcal per 100g
@@ -79,7 +79,7 @@ Line comments begin with `//` and may appear anywhere on a line.
 
 A **quantity** is a numeric value followed by an optional unit, with no required space between them.
 
-```
+```nutrition
 100g        // 100 grams
 2.5 cups    // 2.5 cups (space before unit is allowed)
 30 min      // 30 minutes
@@ -92,7 +92,7 @@ When an ingredient defines multiple quantity equivalencies, the parser records a
 
 A **property** is a named nutritional attribute with a quantity value, written as `name: value` inside a block:
 
-```
+```nutrition
 calories: 269
 protein: 14.5g
 fat: 4g
@@ -111,7 +111,7 @@ Property names are arbitrary identifiers. The unit-resolution system recognises 
 Defines a food ingredient with one or more quantity equivalencies, one or more name aliases, and a property block.
 
 **Syntax:**
-```
+```nutrition
 @ingredient(<quantity>)... "<alias>"... {
   <property>: <quantity>
   ...
@@ -123,7 +123,7 @@ Defines a food ingredient with one or more quantity equivalencies, one or more n
 - **Properties** — nutritional facts per the base serving size. The block may be empty (`{}`).
 
 **Examples:**
-```
+```nutrition
 // Single serving size
 @ingredient(100g) "sugar" {
   calories: 387
@@ -147,7 +147,7 @@ Defines a food ingredient with one or more quantity equivalencies, one or more n
 Defines a recipe as a combination of ingredients and specifies how many servings (or what total quantity) it yields.
 
 **Syntax:**
-```
+```nutrition
 @recipe(<yield-quantity>)... "<alias>"... {
   "<ingredient-alias>"(<quantity>)
   ...
@@ -159,7 +159,7 @@ Defines a recipe as a combination of ingredients and specifies how many servings
 - **Ingredient list** — each line is `"<alias>"(<quantity>)`, referencing any alias of an `@ingredient` or another `@recipe`. Entries can optionally be comma-separated.
 
 **Examples:**
-```
+```nutrition
 @recipe(8)(500g) "chickpea stew" {
   "chickpeas"(2 cups)
   "water"(5 cups)
@@ -180,7 +180,7 @@ Nutritional values are computed by resolving each ingredient reference, scaling 
 Defines an exercise with a canonical duration/quantity and the calories (or other properties) it burns per that quantity.
 
 **Syntax:**
-```
+```nutrition
 @exercise(<quantity>)... "<alias>"... {
   <property>: <quantity>
   ...
@@ -188,7 +188,7 @@ Defines an exercise with a canonical duration/quantity and the calories (or othe
 ```
 
 **Example:**
-```
+```nutrition
 @exercise(30 min) "running" {
   calories: 300kcal
 }
@@ -203,7 +203,7 @@ When referenced in a `@day` block via `@exercised`, the quantity is scaled to ma
 Logs a single day's food intake and exercise. The date must be an ISO-8601 date string (`YYYY-MM-DD`).
 
 **Syntax:**
-```
+```nutrition
 @day "<YYYY-MM-DD>" {
   @ate "<food-alias>"(<quantity>)
   @exercised "<exercise-alias>"(<quantity>)
@@ -215,7 +215,7 @@ Logs a single day's food intake and exercise. The date must be an ISO-8601 date 
 - **`@exercised`** — records performing an exercise at a given quantity/duration.
 
 **Example:**
-```
+```nutrition
 @day "2026-01-06" {
   @ate "simple chickpeas"(3)
   @exercised "running"(30 min)
@@ -384,7 +384,7 @@ nutrition generate ingredient \
 ```
 
 Output:
-```
+```nutrition
 @ingredient(100g)(1 cup) "brown rice" {
     calories: 370
     protein: 7.9g
@@ -439,7 +439,7 @@ nutrition generate day \
 ```
 
 Output:
-```
+```nutrition
 @day "2026-01-15" {
     @ate "oatmeal"(2)
     @exercised "running"(30 min)
@@ -477,7 +477,7 @@ curl -s -X POST http://localhost:8080 \
 ```
 
 Response:
-```
+```nutrition
 @ingredient(100g) "oats" {
     calories: 389
 }
@@ -546,7 +546,7 @@ npm run watch
 
 A complete sample file demonstrating all language features:
 
-```
+```nutrition
 // ── Ingredients ──────────────────────────────────────────────────────────────
 
 @ingredient(100g)(1 cup) "chickpeas" "chickpea" "garbanzo beans" {
