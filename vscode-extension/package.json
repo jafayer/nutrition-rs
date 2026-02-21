@@ -3,6 +3,8 @@
   "displayName": "Nutrition Language Support",
   "description": "Language support for Nutrition files",
   "version": "0.1.0",
+  "repository": "https://github.com/jafayer/nutrition-rs",
+  "license": "MIT",
   "publisher": "nutrition",
   "engines": {
     "vscode": "^1.75.0"
@@ -73,13 +75,10 @@
   "devDependencies": {
     "@types/node": "^25.3.0",
     "@types/vscode": "^1.75.0",
-    "@vscode/vsce": "^2.22.0",
+    "@vscode/vsce": "^3.7.1",
     "typescript": "^5.3.0"
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.1"
-  },
-  "overrides": { 
-    "minimatch": "10.2.1"
   }
 }
