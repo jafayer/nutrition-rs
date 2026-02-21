@@ -42,6 +42,11 @@ impl CanEmit<Day> for DayEmitter {
                     output.push_str(&exercised.quantity.to_string());
                     output.push(')');
                 }
+
+                
+                DayItem::Meal(_meal_label) => {
+                    // TODO: support ordered meal labels
+                }
             }
         }
 

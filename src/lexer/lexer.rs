@@ -45,12 +45,12 @@ pub enum Token {
     #[regex(r"true|false|True|False", |lex| lex.slice().to_lowercase() == "true")]
     Bool(bool),
 
-    #[regex(r"[A-Za-z_][A-Za-z0-9_\-]*", |lex| lex.slice().to_string())]
-    Identifier(String),
-
-    // Meal label: [Breakfast]
+    // Meal label: [Breakfast] - put before Identifier to ensure priority
     #[regex(r"\[[^\]\n]+\]", |lex| lex.slice().to_string())]
     MealLabel(String),
+
+    #[regex(r"[A-Za-z_][A-Za-z0-9_\-]*", |lex| lex.slice().to_string())]
+    Identifier(String),
 
     // Comment
     #[regex(r"//[^\n]*", |lex| lex.slice().to_string(), allow_greedy = true)]

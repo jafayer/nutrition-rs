@@ -16,6 +16,8 @@ fn skip_block_ws<'a>() -> impl Parser<'a, &'a [Token], ()> + Clone {
 fn block_separator<'a>() -> impl Parser<'a, &'a [Token], ()> + Clone {
     any()
         .filter(|tok| matches!(tok, Token::Comma | Token::Newline | Token::Comment(_)))
+        .repeated()
+        .at_least(1)
         .ignored()
 }
 
@@ -34,7 +36,14 @@ fn parse_identifier<'a>() -> impl Parser<'a, &'a [Token], String> + Clone {
 
 fn parse_quantity<'a>() -> impl Parser<'a, &'a [Token], Quantity> + Clone {
     parse_number()
-        .then(parse_identifier().or_not())
+        .then(
+            parse_identifier()
+                .repeated()
+                .at_least(1)
+                .collect::<Vec<String>>()
+                .map(|parts| Some(parts.join(" ")))
+        )
+        .or(parse_number().map(|n| (n, None)))
         .map(|(amount, unit)| Quantity { amount, unit })
 }
 
@@ -163,8 +172,8 @@ fn parse_day_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
             just(Token::LBrace)
                 .ignore_then(skip_block_ws())
                 .ignore_then(
-                    parse_ate_item()
-                        .map(DayItem::Ate)
+                    parse_meal_label()
+                        .or(parse_ate_item().map(DayItem::Ate))
                         .or(parse_exercised_item().map(DayItem::Exercised))
                         .separated_by(block_separator())
                         .allow_trailing()
@@ -208,6 +217,14 @@ fn parse_exercise_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
                 properties,
             })
         })
+}
+
+fn parse_meal_label<'a>() -> impl Parser<'a, &'a [Token], DayItem> + Clone {
+    select! { Token::MealLabel(label) => {
+        // Extract the label text without the brackets
+        let trimmed = label.trim_start_matches('[').trim_end_matches(']').to_string();
+        DayItem::Meal(trimmed)
+    }}
 }
 
 fn parse_comment<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {

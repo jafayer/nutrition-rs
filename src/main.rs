@@ -379,7 +379,7 @@ fn print_document(node: nutrition_rs::ast::ast::Document) {
 fn help_for_kind(kind: &str) -> &'static str {
     match kind {
         "@day" => {
-            "@day blocks may only contain `@ate` and `@exercised` entries"
+            "@day blocks may only contain `@ate`, `@exercised`, and `[MealLabel]` entries"
         }
         "@ingredient" | "@food" => {
             "ingredients must have at least one quantity, one alias, and a `{ property: value }` body"

@@ -406,6 +406,7 @@ pub struct Exercised {
 pub enum DayItem {
     Ate(Ate),
     Exercised(Exercised),
+    Meal(String), // meal label, e.g. "breakfast"
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -437,6 +438,11 @@ impl Day {
                     result.push_str("\"(");
                     result.push_str(&exercised.quantity.to_string());
                     result.push_str(")\n");
+                }
+                DayItem::Meal(meal_label) => {
+                    result.push_str("    \"");
+                    result.push_str(meal_label);
+                    result.push_str("\"\n");
                 }
             }
         }
