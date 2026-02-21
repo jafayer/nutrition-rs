@@ -7,25 +7,12 @@ echo "================================"
 
 cd "$(dirname "$0")/vscode-extension"
 
-# Step 1: Build the LSP server
-echo -e "\n[1/4] Building LSP server..."
-cd ..
-cargo build --release --bin nutrition-lsp
-cd vscode-extension
-
-# Step 2: Copy LSP binary to extension
-echo -e "\n[2/4] Copying LSP binary..."
-mkdir -p bin
-cp ../target/release/nutrition-lsp bin/
-chmod +x bin/nutrition-lsp
-echo "  ✓ LSP binary copied to bin/nutrition-lsp"
-
-# Step 3: Install npm dependencies
-echo -e "\n[3/4] Installing npm dependencies..."
+# Step 1: Install npm dependencies
+echo -e "\n[1/2] Installing npm dependencies..."
 npm install
 
-# Step 4: Compile TypeScript
-echo -e "\n[4/4] Compiling TypeScript..."
+# Step 2: Compile TypeScript
+echo -e "\n[2/2] Compiling TypeScript..."
 npm run compile
 
 echo -e "\n================================"

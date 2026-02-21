@@ -191,11 +191,72 @@ function registerTodayCommand(context: vscode.ExtensionContext) {
   context.subscriptions.push(disposable);
 }
 
+function registerFormattingProvider(context: vscode.ExtensionContext) {
+  const provider = vscode.languages.registerDocumentFormattingEditProvider('nutrition', {
+    provideDocumentFormattingEdits(document: vscode.TextDocument): vscode.TextEdit[] {
+      const edits: vscode.TextEdit[] = [];
+      const indentSize = 2;
+      
+      let braceDepth = 0;
+      let lastClosingBraceLine: number | undefined;
+      
+      for (let i = 0; i < document.lineCount; i++) {
+        const line = document.lineAt(i);
+        const text = line.text;
+        const trimmed = text.trim();
+        
+        // Skip empty lines
+        if (trimmed === '') {
+          continue;
+        }
+        
+        // Determine indentation for this line
+        let expectedIndent = braceDepth * indentSize;
+        
+        // Closing braces decrease indent before the line
+        if (trimmed.startsWith('}')) {
+          expectedIndent = Math.max(0, (braceDepth - 1) * indentSize);
+          lastClosingBraceLine = i;
+        }
+        
+        // Check if this line starts a new block (after a closing brace)
+        // and ensure there's a blank line between them
+        const isBlockStart = /^@(ingredient|food|recipe|day|exercise)\b/.test(trimmed);
+        if (isBlockStart && lastClosingBraceLine !== undefined && i === lastClosingBraceLine + 1) {
+          // Insert a blank line before this block
+          const insertPos = new vscode.Position(i, 0);
+          edits.push(new vscode.TextEdit(new vscode.Range(insertPos, insertPos), '\n'));
+        }
+        
+        const currentIndent = line.text.match(/^(\s*)/)?.[1]?.length ?? 0;
+        const expectedIndentStr = ' '.repeat(expectedIndent);
+        
+        // Only add edit if indentation differs
+        if (currentIndent !== expectedIndent) {
+          const range = new vscode.Range(i, 0, i, currentIndent);
+          edits.push(new vscode.TextEdit(range, expectedIndentStr));
+        }
+        
+        // Update brace depth for next iteration
+        // Count opening braces before any closing braces
+        const openBraces = (text.match(/\{/g) ?? []).length;
+        const closeBraces = (text.match(/\}/g) ?? []).length;
+        braceDepth += openBraces - closeBraces;
+      }
+      
+      return edits;
+    }
+  });
+  
+  context.subscriptions.push(provider);
+}
+
 export function activate(context: vscode.ExtensionContext) {
   console.log('Nutrition language extension is now active');
 
   DECL_CONFIGS.forEach(cfg => registerFindCommand(context, cfg));
   registerTodayCommand(context);
+  registerFormattingProvider(context);
 }
 
 export function deactivate() {}
