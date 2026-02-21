@@ -1,4 +1,14 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
+import {
+  LanguageClient,
+  LanguageClientOptions,
+  ServerOptions,
+  TransportKind
+} from 'vscode-languageclient/node';
+
+let client: LanguageClient | undefined;
 
 type DeclarationKind = 'ingredient' | 'food' | 'recipe' | 'day';
 
@@ -191,6 +201,54 @@ function registerTodayCommand(context: vscode.ExtensionContext) {
   context.subscriptions.push(disposable);
 }
 
+function getServerCommand(context: vscode.ExtensionContext): string {
+  const config = vscode.workspace.getConfiguration('nutrition');
+  const configuredPath = config.get<string>('lsp.path')?.trim();
+  const serverPath = configuredPath && configuredPath.length > 0
+    ? configuredPath
+    : context.asAbsolutePath(path.join('bin', 'nutrition-lsp'));
+
+  if (!fs.existsSync(serverPath)) {
+    throw new Error(`Nutrition LSP binary not found at: ${serverPath}`);
+  }
+
+  return serverPath;
+}
+
+async function startLanguageClient(context: vscode.ExtensionContext): Promise<void> {
+  const outputChannel = vscode.window.createOutputChannel('Nutrition Language Server');
+  const traceOutputChannel = vscode.window.createOutputChannel('Nutrition LSP Trace');
+  context.subscriptions.push(outputChannel, traceOutputChannel);
+
+  const command = getServerCommand(context);
+  const serverOptions: ServerOptions = {
+    run: { command, transport: TransportKind.stdio },
+    debug: { command, transport: TransportKind.stdio }
+  };
+
+  const clientOptions: LanguageClientOptions = {
+    documentSelector: [{ scheme: 'file', language: 'nutrition' }],
+    outputChannel,
+    traceOutputChannel
+  };
+
+  client = new LanguageClient('nutritionLanguageServer', 'Nutrition Language Server', serverOptions, clientOptions);
+
+  const traceSetting = vscode.workspace
+    .getConfiguration('nutrition')
+    .get<string>('trace.server', 'off');
+
+  if (traceSetting === 'messages') {
+    client.setTrace(1);
+  } else if (traceSetting === 'verbose') {
+    client.setTrace(2);
+  } else {
+    client.setTrace(0);
+  }
+
+  await client.start();
+}
+
 function registerFormattingProvider(context: vscode.ExtensionContext) {
   const provider = vscode.languages.registerDocumentFormattingEditProvider('nutrition', {
     provideDocumentFormattingEdits(document: vscode.TextDocument): vscode.TextEdit[] {
@@ -257,6 +315,16 @@ export function activate(context: vscode.ExtensionContext) {
   DECL_CONFIGS.forEach(cfg => registerFindCommand(context, cfg));
   registerTodayCommand(context);
   registerFormattingProvider(context);
+
+  startLanguageClient(context).catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    vscode.window.showErrorMessage(`Failed to start Nutrition Language Server: ${message}`);
+  });
 }
 
-export function deactivate() {}
+export async function deactivate(): Promise<void> {
+  if (client) {
+    await client.stop();
+    client = undefined;
+  }
+}
