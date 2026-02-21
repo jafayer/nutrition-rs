@@ -435,6 +435,9 @@ pub fn compute_daily_report(document: &Document, day: &Day) -> DailyNutritionRep
                 }
                 // Unrecognised exercise alias: skip gracefully.
             }
+            DayItem::Meal(_) => {
+                // Meal labels don't contribute to nutrition directly, so ignore.
+            }
         }
     }
 

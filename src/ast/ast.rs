@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Document {
     pub items: Vec<Item>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Item {
     Property(Property),
     Ingredient(Ingredient),
@@ -26,7 +26,7 @@ pub enum Item {
  * For example, "100g" would have amount 100 and unit "g".
  * There is an optional space between amount and unit in the string representation.
  */
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Quantity {
     pub amount: f64,
     pub unit: Option<String>,
@@ -93,7 +93,7 @@ impl Quantity {
  * Property represents a named property with a quantity value.
  * For example, "calories: 200kcal" would have name "calories" and value Quantity { amount: 200, unit: Some("kcal") }.
  */
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Property {
     pub name: String,
     pub value: Quantity,
@@ -133,7 +133,7 @@ impl Property {
  * properties.
  * For example, an ingredient could be "@ingredient(100g) "sugar" { calories: 387kcal }".
  */
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Ingredient {
     pub aliases: Vec<String>,
     pub quantities: Vec<Quantity>,
@@ -211,7 +211,7 @@ impl Ingredient {
  * For example, in a recipe, you may have
  * "sugar"(100g)
  */
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IngredientLabel {
     pub alias: String,
     pub quantity: Quantity,
@@ -234,7 +234,7 @@ impl IngredientLabel {
  * Recipe represents a recipe with aliases, quantities, and ingredients.
  * For example, a recipe could be "@recipe(4 servings) "Pancakes" { "flour"(200g) "milk"(300ml) }".
  */
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Recipe {
     pub aliases: Vec<String>,
     pub quantities: Vec<Quantity>,
@@ -321,7 +321,7 @@ impl Recipe {
  * properties.
  * For example, an exercise could be "@exercise(30min) "running" { calories: 300kcal }".
  */
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Exercise {
     pub aliases: Vec<String>,
     pub quantities: Vec<Quantity>,
@@ -406,6 +406,7 @@ pub struct Exercised {
 pub enum DayItem {
     Ate(Ate),
     Exercised(Exercised),
+    Meal(String), // meal label, e.g. "breakfast"
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -437,6 +438,11 @@ impl Day {
                     result.push_str("\"(");
                     result.push_str(&exercised.quantity.to_string());
                     result.push_str(")\n");
+                }
+                DayItem::Meal(meal_label) => {
+                    result.push_str("    \"");
+                    result.push_str(meal_label);
+                    result.push_str("\"\n");
                 }
             }
         }

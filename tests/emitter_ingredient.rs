@@ -1,7 +1,7 @@
 use nutrition_rs::emitters::ingredient::IngredientEmitter;
 use nutrition_rs::emitters::emitter::CanEmit;
 use nutrition_rs::ast::ast::{Ingredient, Quantity, Property};
-use nutrition_rs::tree_sitter_ast::ast::parse;
+use nutrition_rs::parser::parser::parse;
 
 #[test]
 fn test_emit_ingredient_with_properties() {
@@ -27,8 +27,8 @@ fn test_emit_ingredient_with_properties() {
     println!("Emitted Ingredient:\n{}", output);
 
     // parse the emitted output to ensure it's valid
-    let tree = parse(&output, None).expect("Failed to parse emitted ingredient");
-    assert!(tree.root_node().has_error() == false, "Parsed tree has errors");
+    let doc = parse(&output).expect("Failed to parse emitted ingredient");
+    assert!(!doc.items.is_empty(), "Parsed document should not be empty");
 }
 
 #[test]
@@ -48,7 +48,8 @@ fn test_emit_ingredient_without_properties() {
 
     // print output for debugging
     println!("Emitted Ingredient:\n{}", output);
+
     // parse the emitted output to ensure it's valid
-    let tree = parse(&output, None).expect("Failed to parse emitted ingredient");
-    assert!(tree.root_node().has_error() == false, "Parsed tree has errors");
+    let doc = parse(&output).expect("Failed to parse emitted ingredient");
+    assert!(!doc.items.is_empty(), "Parsed document should not be empty");
 }

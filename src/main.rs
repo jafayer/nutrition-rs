@@ -99,17 +99,90 @@ async fn main() {
 
     match cli.command {
         Commands::Validate { show_tree } => {
+            use ariadne::{Color, Label, Report, ReportKind, Source};
+
             let file = require_file(&cli.file);
-            file_loader::load_tree(Some(&file))
-                .map(|document| {
-                    println!("File '{}' is valid.", file);
-                    if show_tree {
-                        print_document(document);
+            let (source, document, diagnostics) =
+                match file_loader::load_source_with_diagnostics(&file) {
+                    Ok(result) => result,
+                    Err(e) => {
+                        eprintln!("error: {}", e);
+                        std::process::exit(1);
                     }
-                })
-                .unwrap_or_else(|err| {
-                    eprintln!("Validation failed for file '{}': {}", file, err);
-                });
+                };
+
+            // Render each diagnostic as a rich ariadne report with source
+            // context, arrows, and colour highlighting.
+            for diag in &diagnostics {
+                let mut report =
+                    Report::build(ReportKind::Error, file.as_str(), diag.byte_span.start)
+                        .with_message(&diag.message)
+                        .with_label(
+                            Label::new((file.as_str(), diag.byte_span.clone()))
+                                .with_message(format!(
+                                    "this {} could not be parsed",
+                                    diag.declaration_kind
+                                ))
+                                .with_color(Color::Red),
+                        );
+
+                // If we know the specific token that caused the failure,
+                // add a second label pointing directly at it.
+                if let (Some(note_span), Some(note_msg)) =
+                    (&diag.note_span, &diag.note_message)
+                {
+                    report = report.with_label(
+                        Label::new((file.as_str(), note_span.clone()))
+                            .with_message(note_msg)
+                            .with_color(Color::Yellow),
+                    );
+                }
+
+                report
+                    .with_help(help_for_kind(diag.declaration_kind))
+                    .finish()
+                    .eprint((file.as_str(), Source::from(&source)))
+                    .unwrap();
+            }
+
+            match document {
+                Some(doc) if diagnostics.is_empty() => {
+                    let item_count = doc
+                        .items
+                        .iter()
+                        .filter(|i| {
+                            !matches!(i, nutrition_rs::ast::ast::Item::Comment(_))
+                        })
+                        .count();
+                    println!("✓ '{}' is valid ({} item(s)).", file, item_count);
+                    if show_tree {
+                        print_document(doc);
+                    }
+                }
+                Some(doc) => {
+                    let recovered = doc
+                        .items
+                        .iter()
+                        .filter(|i| {
+                            !matches!(i, nutrition_rs::ast::ast::Item::Comment(_))
+                        })
+                        .count();
+                    eprintln!(
+                        "✗ '{}' has {} parse error(s); {} item(s) recovered.",
+                        file,
+                        diagnostics.len(),
+                        recovered,
+                    );
+                    if show_tree {
+                        print_document(doc);
+                    }
+                    std::process::exit(1);
+                }
+                None => {
+                    eprintln!("✗ '{}' could not be parsed.", file);
+                    std::process::exit(1);
+                }
+            }
         }
 
         Commands::Generate { generate_command } => match generate_command {
@@ -300,4 +373,23 @@ fn require_file(file: &Option<String>) -> String {
 
 fn print_document(node: nutrition_rs::ast::ast::Document) {
     println!("{:#?}", node);
+}
+
+/// Return a declaration-specific help message for ariadne's `with_help`.
+fn help_for_kind(kind: &str) -> &'static str {
+    match kind {
+        "@day" => {
+            "@day blocks may only contain `@ate`, `@exercised`, and `[MealLabel]` entries"
+        }
+        "@ingredient" | "@food" => {
+            "ingredients must have at least one quantity, one alias, and a `{ property: value }` body"
+        }
+        "@recipe" => {
+            "recipes must have at least one quantity, one alias, and a body with `\"alias\"(quantity)` entries"
+        }
+        "@exercise" => {
+            "exercises must have at least one quantity, one alias, and a `{ property: value }` body"
+        }
+        _ => "check that all required fields are present and the block is closed with `}`",
+    }
 }

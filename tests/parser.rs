@@ -201,3 +201,236 @@ fn parse_example_items_individually() {
 		}
 	}
 }
+// ---------------------------------------------------------------------------
+// Error-reporting and recovery tests
+// ---------------------------------------------------------------------------
+use nutrition_rs::parser::parser::parse_with_errors;
+
+#[test]
+fn parse_with_errors_returns_empty_errors_for_valid_input() {
+    let source = r#"@ingredient(100g) "chickpeas" { calories: 269 }"#;
+    let (doc, errors) = parse_with_errors(source);
+    assert!(doc.is_some(), "valid input should produce a document");
+    assert!(errors.is_empty(), "valid input should have no errors");
+}
+
+#[test]
+fn parse_with_errors_returns_error_for_invalid_input() {
+    // Completely invalid top-level content.
+    let source = "this is definitely not valid nutrition syntax @@@";
+    let (_, errors) = parse_with_errors(source);
+    assert!(!errors.is_empty(), "invalid input should report at least one error");
+}
+
+#[test]
+fn parse_with_errors_recovers_valid_items_after_bad_one() {
+    // The first ingredient block is missing its closing `}`, making it
+    // malformed.  The second ingredient is valid and should still be parsed.
+    let source = r#"@ingredient(100g) "bad" {
+    calories: 50
+@ingredient(100g) "good" {
+    calories: 60
+}"#;
+    let (doc, errors) = parse_with_errors(source);
+    assert!(doc.is_some(), "should produce a partial document after recovery");
+    assert!(!errors.is_empty(), "should record an error for the malformed item");
+    let doc = doc.unwrap();
+    let valid_ingredients: Vec<_> = doc
+        .items
+        .iter()
+        .filter_map(|i| {
+            if let Item::Ingredient(ing) = i {
+                Some(ing)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert!(
+        !valid_ingredients.is_empty(),
+        "at least the good ingredient should be recovered"
+    );
+}
+
+#[test]
+fn parse_with_errors_error_messages_include_line_number() {
+    let source = "// line 1 comment\n@ingredient MISSING_PARENS_AND_BLOCK\n// another comment";
+    let (_, errors) = parse_with_errors(source);
+    if !errors.is_empty() {
+        // At least one error should mention a line number.
+        let has_line_ref = errors.iter().any(|e| e.starts_with("line "));
+        assert!(has_line_ref, "error messages should reference a line number, got: {:?}", errors);
+    }
+}
+
+#[test]
+fn parse_with_errors_empty_input_returns_empty_document() {
+    let (doc, errors) = parse_with_errors("");
+    assert!(doc.is_some(), "empty input should return Some(Document)");
+    assert!(errors.is_empty(), "empty input should have no errors");
+    assert!(doc.unwrap().items.is_empty());
+}
+
+#[test]
+fn parse_with_errors_multiple_bad_items_all_reported() {
+    // Two malformed declarations and one valid one.
+    let source = r#"@ingredient BROKEN_1
+@ingredient(100g) "good" { calories: 50 }
+@recipe BROKEN_2"#;
+    let (doc, errors) = parse_with_errors(source);
+    assert!(doc.is_some());
+    // Both bad items should generate errors.
+    assert!(errors.len() >= 2, "expected at least 2 errors, got: {:?}", errors);
+}
+
+// ---------------------------------------------------------------------------
+// parse_with_diagnostics tests
+// ---------------------------------------------------------------------------
+use nutrition_rs::parser::parser::parse_with_diagnostics;
+
+#[test]
+fn diagnostics_empty_for_valid_source() {
+    let (doc, diags) = parse_with_diagnostics(
+        r#"@ingredient(100g) "chickpeas" { calories: 269 }"#,
+    );
+    assert!(doc.is_some());
+    assert!(diags.is_empty(), "valid source should produce no diagnostics");
+}
+
+#[test]
+fn diagnostics_carry_byte_span_into_source() {
+    // The @ingredient keyword starts at byte 0.
+    let source = "@ingredient MISSING_BLOCK";
+    let (_, diags) = parse_with_diagnostics(source);
+    assert!(!diags.is_empty(), "malformed declaration should produce a diagnostic");
+    let d = &diags[0];
+    // The span must be within the source string.
+    assert!(d.byte_span.start < source.len());
+    assert!(d.byte_span.end <= source.len());
+}
+
+#[test]
+fn diagnostics_declaration_kind_matches_keyword() {
+    let source = "@recipe MISSING_BLOCK";
+    let (_, diags) = parse_with_diagnostics(source);
+    assert!(!diags.is_empty());
+    assert_eq!(diags[0].declaration_kind, "@recipe");
+}
+
+#[test]
+fn diagnostics_recover_valid_item_after_bad_one() {
+    let source = r#"@ingredient(100g) "bad" {
+    calories: 50
+@ingredient(100g) "good" {
+    calories: 60
+}"#;
+    let (doc, diags) = parse_with_diagnostics(source);
+    assert!(doc.is_some(), "should produce partial document");
+    assert!(!diags.is_empty(), "should have at least one diagnostic");
+    let doc = doc.unwrap();
+    let ingredients: Vec<_> = doc.items.iter()
+        .filter_map(|i| if let Item::Ingredient(ing) = i { Some(ing) } else { None })
+        .collect();
+    assert!(!ingredients.is_empty(), "valid ingredient should be recovered");
+}
+
+#[test]
+fn diagnostics_empty_source_no_diagnostics() {
+    let (doc, diags) = parse_with_diagnostics("");
+    assert!(doc.is_some());
+    assert!(diags.is_empty());
+    assert!(doc.unwrap().items.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// note_span / fine-grained diagnostic tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn diagnostic_day_block_flags_unexpected_string() {
+    // "chickpeas"(1 cup) is not valid in a @day block.
+    let source = r#"@day "2026-01-01" {
+  @ate "chickpea stew"(2)
+  "chickpeas"(1 cup)
+}"#;
+    let (doc, diags) = parse_with_diagnostics(source);
+    assert!(doc.is_some() || !diags.is_empty());
+    assert!(!diags.is_empty(), "should report an error");
+
+    let d = &diags[0];
+    // The note_span should point inside the block (after the opening brace),
+    // not at the declaration header (byte 0).
+    let note = d.note_span.as_ref().expect("note_span should be set");
+    assert!(note.start > 0, "note should not point to the header");
+
+    // The note message should mention "chickpeas".
+    let msg = d.note_message.as_deref().expect("note_message should be set");
+    assert!(
+        msg.contains("chickpeas"),
+        "note message should mention 'chickpeas', got: {msg}"
+    );
+    assert!(
+        msg.contains("@day"),
+        "note message should mention '@day', got: {msg}"
+    );
+}
+
+#[test]
+fn diagnostic_day_block_note_span_within_source() {
+    let source = r#"@day "2026-01-01" {
+  @ate "chickpea stew"(2)
+  "chickpeas"(1 cup)
+}"#;
+    let (_, diags) = parse_with_diagnostics(source);
+    assert!(!diags.is_empty());
+    let d = &diags[0];
+    if let Some(ref note_span) = d.note_span {
+        assert!(
+            note_span.start <= source.len(),
+            "note_span.start out of bounds"
+        );
+        assert!(
+            note_span.end <= source.len(),
+            "note_span.end out of bounds"
+        );
+        // The note span should cover "chickpeas"(1 cup) — verify start byte
+        // points into the word "chickpeas" (after the opening `"`).
+        let snippet = &source[note_span.clone()];
+        assert!(
+            snippet.contains("chickpeas"),
+            "note span should cover 'chickpeas', got: {snippet:?}"
+        );
+    }
+}
+
+#[test]
+fn diagnostic_ingredient_block_flags_unexpected_string() {
+    // A string literal ("chickpeas") is not a valid property in an ingredient block.
+    let source = r#"@ingredient(100g) "oil" {
+  calories: 900
+  "not a property"
+}"#;
+    let (_, diags) = parse_with_diagnostics(source);
+    assert!(!diags.is_empty(), "should report an error");
+    let d = &diags[0];
+    let note = d.note_span.as_ref().expect("note_span should be set");
+    assert!(note.start > 0, "note should not point to the header");
+    let msg = d.note_message.as_deref().expect("note_message should be set");
+    assert!(
+        msg.contains("@ingredient"),
+        "note should mention @ingredient, got: {msg}"
+    );
+}
+
+#[test]
+fn diagnostic_header_only_when_no_brace() {
+    // No `{` means no body to scan — note_span should be None.
+    let source = "@ingredient MISSING_EVERYTHING";
+    let (_, diags) = parse_with_diagnostics(source);
+    assert!(!diags.is_empty());
+    // note_span should be None since there's no body.
+    assert!(
+        diags[0].note_span.is_none(),
+        "no brace → no note_span expected"
+    );
+}

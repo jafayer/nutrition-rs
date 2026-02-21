@@ -1,8 +1,9 @@
-use crate::ast::ast::{Document};
-use crate::tree_sitter_ast::ast::{parse};
-use crate::tree_sitter_ast::semantic::SemanticAnalyzer;
-use std::fs;
-use crate::cli::env::{get_default_file_from_env};
+use std::fs::File;
+use std::io::BufReader;
+
+use crate::ast::ast::Document;
+use crate::parser::parser::{parse_reader, parse_reader_with_errors};
+use crate::cli::env::get_default_file_from_env;
 
 pub fn load_tree(file_path: Option<&str>) -> Result<Document, String> {
     let path = match file_path {
@@ -13,17 +14,48 @@ pub fn load_tree(file_path: Option<&str>) -> Result<Document, String> {
         },
     };
 
-    let content = fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read input file {}: {}", path, e))?;
+    let file = File::open(&path)
+        .map_err(|e| format!("Failed to open input file {}: {}", path, e))?;
+    let reader = BufReader::new(file);
 
-    let parsed = parse(&content, None)
-        .ok_or_else(|| format!("Failed to parse input file {} with Tree-sitter", path))?;
+    parse_reader(reader)
+        .ok_or_else(|| format!("Failed to parse input file {}", path))
+}
 
-    let mut analyzer = SemanticAnalyzer::new();
-    let root_node = parsed.root_node();
+/// Parse a file and return both the (possibly partial) [`Document`] and any
+/// human-readable parse error messages.  Uses error recovery so that a
+/// malformed declaration does not prevent subsequent items from being parsed.
+pub fn load_tree_with_errors(file_path: &str) -> (Option<Document>, Vec<String>) {
+    let file = match File::open(file_path) {
+        Ok(f) => f,
+        Err(e) => {
+            return (
+                None,
+                vec![format!("Failed to open file '{}': {}", file_path, e)],
+            )
+        }
+    };
+    let reader = BufReader::new(file);
+    parse_reader_with_errors(reader)
+}
 
-    let document = analyzer.analyze(root_node, &content)
-        .map_err(|e| format!("Failed to analyze semantic AST for file {}: {}", path, e))?;
-
-    Ok(document)
+/// Read a file fully into memory and parse it with structured byte-span
+/// diagnostics suitable for rich rendering (e.g. via `ariadne`).
+///
+/// Returns `(source_text, document, diagnostics)`.  `document` may be a
+/// partial result when some declarations failed to parse but others succeeded.
+pub fn load_source_with_diagnostics(
+    path: &str,
+) -> Result<
+    (
+        String,
+        Option<crate::ast::ast::Document>,
+        Vec<crate::parser::parser::ParseDiagnostic>,
+    ),
+    String,
+> {
+    let source = std::fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read file '{}': {}", path, e))?;
+    let (doc, diagnostics) = crate::parser::parser::parse_with_diagnostics(&source);
+    Ok((source, doc, diagnostics))
 }
