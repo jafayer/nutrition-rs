@@ -38,3 +38,24 @@ pub fn load_tree_with_errors(file_path: &str) -> (Option<Document>, Vec<String>)
     let reader = BufReader::new(file);
     parse_reader_with_errors(reader)
 }
+
+/// Read a file fully into memory and parse it with structured byte-span
+/// diagnostics suitable for rich rendering (e.g. via `ariadne`).
+///
+/// Returns `(source_text, document, diagnostics)`.  `document` may be a
+/// partial result when some declarations failed to parse but others succeeded.
+pub fn load_source_with_diagnostics(
+    path: &str,
+) -> Result<
+    (
+        String,
+        Option<crate::ast::ast::Document>,
+        Vec<crate::parser::parser::ParseDiagnostic>,
+    ),
+    String,
+> {
+    let source = std::fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read file '{}': {}", path, e))?;
+    let (doc, diagnostics) = crate::parser::parser::parse_with_diagnostics(&source);
+    Ok((source, doc, diagnostics))
+}

@@ -527,3 +527,115 @@ pub fn parse_reader_with_errors<R: BufRead>(reader: R) -> (Option<Document>, Vec
         (Some(Document { items }), errors)
     }
 }
+
+// ---------------------------------------------------------------------------
+// Structured diagnostics with byte-offset spans (for ariadne rendering)
+// ---------------------------------------------------------------------------
+
+/// A parse error carrying both a message and the byte span of the failing
+/// declaration in the original source string.  This is the structured form
+/// of error that enables rich diagnostic rendering (arrows, source snippets,
+/// colour highlighting) via external crates such as `ariadne`.
+pub struct ParseDiagnostic {
+    /// Short description of what failed (e.g. `"malformed @ingredient declaration"`).
+    pub message: String,
+    /// Byte span of the failing region in the original source string.
+    pub byte_span: std::ops::Range<usize>,
+    /// The declaration keyword that introduced the failing block (e.g. `"@ingredient"`).
+    pub declaration_kind: &'static str,
+}
+
+/// Lex `source` and return the tokens paired with their byte spans.
+///
+/// `Error` tokens (unrecognised characters) are discarded, matching the
+/// behaviour of the other `parse*` helpers in this module.
+fn lex_with_spans(source: &str) -> (Vec<Token>, Vec<std::ops::Range<usize>>) {
+    let mut tokens = Vec::new();
+    let mut spans: Vec<std::ops::Range<usize>> = Vec::new();
+    let mut lex = Token::lexer(source);
+    while let Some(result) = lex.next() {
+        if let Ok(tok) = result {
+            spans.push(lex.span());
+            tokens.push(tok);
+        }
+    }
+    (tokens, spans)
+}
+
+/// Parse a nutrition source string, returning both the (possibly partial)
+/// [`Document`] and a list of [`ParseDiagnostic`] values that carry the
+/// byte-span information needed for rich diagnostic rendering.
+///
+/// Behaviour mirrors [`parse_with_errors`] except that errors are returned as
+/// structured `ParseDiagnostic` values rather than plain strings.
+pub fn parse_with_diagnostics(source: &str) -> (Option<Document>, Vec<ParseDiagnostic>) {
+    let (tokens, spans) = lex_with_spans(source);
+    if tokens.is_empty() {
+        return (Some(Document { items: vec![] }), vec![]);
+    }
+
+    let has_content = tokens.iter().any(|t| !matches!(t, Token::Newline));
+    let chunks = split_chunks(&tokens);
+
+    if has_content && chunks.is_empty() {
+        return (
+            None,
+            vec![ParseDiagnostic {
+                message: "no recognizable declarations found".to_string(),
+                byte_span: 0..source.len().max(1),
+                declaration_kind: "declaration",
+            }],
+        );
+    }
+
+    // Build a line map so parse_chunk receives a correct 1-based line number.
+    let line_map = token_line_map(&tokens);
+
+    let mut items: Vec<Item> = Vec::new();
+    let mut diagnostics: Vec<ParseDiagnostic> = Vec::new();
+
+    for (start, end) in &chunks {
+        let chunk = &tokens[*start..*end];
+
+        // Byte span: from the start of the first token to the end of the last.
+        let byte_start = spans.get(*start).map(|s| s.start).unwrap_or(0);
+        let byte_end = spans
+            .get(end.saturating_sub(1))
+            .map(|s| s.end)
+            .unwrap_or(byte_start + 1);
+
+        // For the label in ariadne, only highlight to the end of the first
+        // line of the declaration so multi-line blocks stay readable.
+        let first_newline_byte = chunk
+            .iter()
+            .enumerate()
+            .find(|(_, t)| matches!(t, Token::Newline))
+            .and_then(|(i, _)| spans.get(*start + i))
+            .map(|s| s.start)
+            .unwrap_or(byte_end);
+        let label_span = byte_start..first_newline_byte;
+
+        let start_line = line_map.get(*start).copied().unwrap_or(1);
+        match parse_chunk(chunk, start_line) {
+            Ok(chunk_items) => items.extend(chunk_items),
+            Err(_) => {
+                let decl = chunk
+                    .iter()
+                    .find(|t| is_top_level_start(t))
+                    .map(declaration_name)
+                    .unwrap_or("declaration");
+                diagnostics.push(ParseDiagnostic {
+                    message: format!("malformed {} declaration", decl),
+                    byte_span: label_span,
+                    declaration_kind: decl,
+                });
+            }
+        }
+    }
+
+    if items.is_empty() && !diagnostics.is_empty() {
+        (None, diagnostics)
+    } else {
+        (Some(Document { items }), diagnostics)
+    }
+}

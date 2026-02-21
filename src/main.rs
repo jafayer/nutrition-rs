@@ -99,19 +99,47 @@ async fn main() {
 
     match cli.command {
         Commands::Validate { show_tree } => {
-            let file = require_file(&cli.file);
-            let (document, errors) = file_loader::load_tree_with_errors(&file);
+            use ariadne::{Color, Label, Report, ReportKind, Source};
 
-            // Print every specific parse error so the user knows exactly what
-            // is wrong and on which line.
-            for err in &errors {
-                eprintln!("  error: {}", err);
+            let file = require_file(&cli.file);
+            let (source, document, diagnostics) =
+                match file_loader::load_source_with_diagnostics(&file) {
+                    Ok(result) => result,
+                    Err(e) => {
+                        eprintln!("error: {}", e);
+                        std::process::exit(1);
+                    }
+                };
+
+            // Render each diagnostic as a rich ariadne report with source
+            // context, arrows, and colour highlighting.
+            for diag in &diagnostics {
+                Report::build(ReportKind::Error, file.as_str(), diag.byte_span.start)
+                    .with_message(&diag.message)
+                    .with_label(
+                        Label::new((file.as_str(), diag.byte_span.clone()))
+                            .with_message(format!(
+                                "this {} could not be parsed",
+                                diag.declaration_kind
+                            ))
+                            .with_color(Color::Red),
+                    )
+                    .with_help(
+                        "check that all required fields are present and the block is closed with `}`",
+                    )
+                    .finish()
+                    .eprint((file.as_str(), Source::from(&source)))
+                    .unwrap();
             }
 
             match document {
-                Some(doc) if errors.is_empty() => {
-                    let item_count = doc.items.iter()
-                        .filter(|i| !matches!(i, nutrition_rs::ast::ast::Item::Comment(_)))
+                Some(doc) if diagnostics.is_empty() => {
+                    let item_count = doc
+                        .items
+                        .iter()
+                        .filter(|i| {
+                            !matches!(i, nutrition_rs::ast::ast::Item::Comment(_))
+                        })
                         .count();
                     println!("✓ '{}' is valid ({} item(s)).", file, item_count);
                     if show_tree {
@@ -119,13 +147,18 @@ async fn main() {
                     }
                 }
                 Some(doc) => {
+                    let recovered = doc
+                        .items
+                        .iter()
+                        .filter(|i| {
+                            !matches!(i, nutrition_rs::ast::ast::Item::Comment(_))
+                        })
+                        .count();
                     eprintln!(
                         "✗ '{}' has {} parse error(s); {} item(s) recovered.",
                         file,
-                        errors.len(),
-                        doc.items.iter()
-                            .filter(|i| !matches!(i, nutrition_rs::ast::ast::Item::Comment(_)))
-                            .count()
+                        diagnostics.len(),
+                        recovered,
                     );
                     if show_tree {
                         print_document(doc);

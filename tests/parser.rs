@@ -282,3 +282,62 @@ fn parse_with_errors_multiple_bad_items_all_reported() {
     // Both bad items should generate errors.
     assert!(errors.len() >= 2, "expected at least 2 errors, got: {:?}", errors);
 }
+
+// ---------------------------------------------------------------------------
+// parse_with_diagnostics tests
+// ---------------------------------------------------------------------------
+use nutrition_rs::parser::parser::parse_with_diagnostics;
+
+#[test]
+fn diagnostics_empty_for_valid_source() {
+    let (doc, diags) = parse_with_diagnostics(
+        r#"@ingredient(100g) "chickpeas" { calories: 269 }"#,
+    );
+    assert!(doc.is_some());
+    assert!(diags.is_empty(), "valid source should produce no diagnostics");
+}
+
+#[test]
+fn diagnostics_carry_byte_span_into_source() {
+    // The @ingredient keyword starts at byte 0.
+    let source = "@ingredient MISSING_BLOCK";
+    let (_, diags) = parse_with_diagnostics(source);
+    assert!(!diags.is_empty(), "malformed declaration should produce a diagnostic");
+    let d = &diags[0];
+    // The span must be within the source string.
+    assert!(d.byte_span.start < source.len());
+    assert!(d.byte_span.end <= source.len());
+}
+
+#[test]
+fn diagnostics_declaration_kind_matches_keyword() {
+    let source = "@recipe MISSING_BLOCK";
+    let (_, diags) = parse_with_diagnostics(source);
+    assert!(!diags.is_empty());
+    assert_eq!(diags[0].declaration_kind, "@recipe");
+}
+
+#[test]
+fn diagnostics_recover_valid_item_after_bad_one() {
+    let source = r#"@ingredient(100g) "bad" {
+    calories: 50
+@ingredient(100g) "good" {
+    calories: 60
+}"#;
+    let (doc, diags) = parse_with_diagnostics(source);
+    assert!(doc.is_some(), "should produce partial document");
+    assert!(!diags.is_empty(), "should have at least one diagnostic");
+    let doc = doc.unwrap();
+    let ingredients: Vec<_> = doc.items.iter()
+        .filter_map(|i| if let Item::Ingredient(ing) = i { Some(ing) } else { None })
+        .collect();
+    assert!(!ingredients.is_empty(), "valid ingredient should be recovered");
+}
+
+#[test]
+fn diagnostics_empty_source_no_diagnostics() {
+    let (doc, diags) = parse_with_diagnostics("");
+    assert!(doc.is_some());
+    assert!(diags.is_empty());
+    assert!(doc.unwrap().items.is_empty());
+}
