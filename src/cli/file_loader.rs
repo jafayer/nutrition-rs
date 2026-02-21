@@ -1,6 +1,8 @@
+use std::fs::File;
+use std::io::BufReader;
+
 use crate::ast::ast::Document;
-use crate::tree_sitter_ast::ast::parse;
-use std::fs;
+use crate::tree_sitter_ast::ast::parse_reader;
 use crate::cli::env::get_default_file_from_env;
 
 pub fn load_tree(file_path: Option<&str>) -> Result<Document, String> {
@@ -12,9 +14,10 @@ pub fn load_tree(file_path: Option<&str>) -> Result<Document, String> {
         },
     };
 
-    let content = fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read input file {}: {}", path, e))?;
+    let file = File::open(&path)
+        .map_err(|e| format!("Failed to open input file {}: {}", path, e))?;
+    let reader = BufReader::new(file);
 
-    parse(&content)
+    parse_reader(reader)
         .ok_or_else(|| format!("Failed to parse input file {}", path))
 }
