@@ -10,10 +10,6 @@ edition = "2024"
 name = "nutrition"
 path = "src/main.rs"
 
-[[bin]]
-name = "nutrition-lsp"
-path = "src/lsp/server.rs"
-
 [lib]
 name = "nutrition_rs"
 path = "src/lib.rs"
@@ -26,8 +22,6 @@ axum = "0.8.8"
 chumsky = "0.12.0"
 clap = { version = "4.5.54", features = ["derive", "env"] }
 logos = "0.16.0"
-lsp-server = "0.7.9"
-lsp-types = "0.97.0"
 schemars = "1.2.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"

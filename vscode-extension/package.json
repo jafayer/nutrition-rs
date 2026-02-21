@@ -56,6 +56,12 @@
         "scopeName": "source.nutrition",
         "path": "./syntaxes/nutrition.tmLanguage.json"
       }
+    ],
+    "documentFormatters": [
+      {
+        "language": "nutrition",
+        "scheme": "file"
+      }
     ]
   },
   "scripts": {

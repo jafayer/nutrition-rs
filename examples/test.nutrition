@@ -1,11 +1,11 @@
 // test comment
 
 @ingredient(100g)(1 cup) "chickpeas" "chickpea" "garbanzo beans" { // test comment
-    calories: 269
-    protein: 14.5g
-    fat: 4g
-    carbohydrates: 45g
-    fiber: 12.5g // test comment
+  calories: 269
+  protein: 14.5g
+  fat: 4g
+  carbohydrates: 45g
+  fiber: 12.5g // test comment
 } // test comment
 
 @ingredient(1 cup) "water" {}
@@ -13,23 +13,23 @@
 @recipe(8)(500g) "chickpea stew" { "chickpeas"(2 cups), "water"(5 cups) } // test
 
 @exercise(30 min) "running" {
-    calories: 300kcal
+  calories: 300kcal
 }
 
 @day "2026-01-01" { // test comment
-    // test comment
-    @ate "chickpea stew"(2)
+  // test comment
+  @ate "chickpea stew"(2)
 }
 // test comment
 
 @recipe(4) "simple chickpeas" {
-    "water"(1 cup)
-    "chickpeas"(200g)
+  "water"(1 cup)
+  "chickpeas"(200g)
 }
 
 @day "2026-01-06" {
-    @ate "simple chickpeas"(3)
-    @exercised "running"(30 min)
+  @ate "simple chickpeas"(3)
+  @exercised "running"(30 min)
 }
 
 @ingredient(164g)(1cup) "chickpea" "chickpeas" "garbanzo beans" {
@@ -50,10 +50,12 @@
   fat: 10g
   carbohydrates: 36g
 }
+
 @recipe(2) "pizza party" {
   "pizza"(2 slices)
   "water"(4 cups)
 }
+
 @recipe(2) "double pizza party" {
-    "pizza"(0.5 pie)
+  "pizza"(0.5 pie)
 }
