@@ -1,7 +1,10 @@
-use crate::emitters::emitter::{CanEmit, CanEmitAI};
+use crate::emitters::emitter::CanEmit;
 use crate::emitters::ingredient::IngredientEmitter;
 use crate::ast::ast::{Ingredient, Quantity, Property};
 use clap::Parser;
+
+#[cfg(feature = "runtime")]
+use crate::emitters::emitter::CanEmitAI;
 
 #[derive(Parser, Debug)]
 #[clap(about = "Generate various outputs from nutrition data")]
@@ -43,7 +46,16 @@ impl IngredientGenerateArgs {
         }
     }
 
-    pub async fn emit(&self) -> String {
+    pub fn emit(&self) -> String {
+        let ingredient = self.to_ingredient();
+        let emitter = IngredientEmitter;
+        emitter.emit(&ingredient)
+    }
+
+    /// Emit the ingredient, optionally using the AI backend when `--ai` is
+    /// passed.  Only available with the `runtime` feature.
+    #[cfg(feature = "runtime")]
+    pub async fn emit_with_ai(&self) -> String {
         let ingredient = self.to_ingredient();
         let emitter = IngredientEmitter;
 

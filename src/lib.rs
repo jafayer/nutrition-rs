@@ -3,6 +3,7 @@ pub mod parser;
 pub mod ast;
 pub mod cli;
 pub mod emitters;
+#[cfg(feature = "runtime")]
 pub mod web_server;
 pub mod nutrition;
 pub mod display;
