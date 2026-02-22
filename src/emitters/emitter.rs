@@ -1,4 +1,6 @@
 use crate::ast::ast::Quantity;
+
+#[cfg(feature = "runtime")]
 use async_trait::async_trait;
 
 
@@ -6,6 +8,7 @@ pub trait CanEmit<T> {
     fn emit(&self, item: &T) -> String;
 }
 
+#[cfg(feature = "runtime")]
 #[async_trait]
 pub trait CanEmitAI<T>: Send + Sync {
     async fn emit_ai(&self, item: &T) -> Result<T, String>;

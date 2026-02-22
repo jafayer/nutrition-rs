@@ -1,7 +1,11 @@
 use crate::ast::ast::Ingredient;
 use crate::emitters::emitter::{
-    CanEmit, CanEmitAI, format_quantity, quoted_string,
+    CanEmit, format_quantity, quoted_string,
 };
+
+#[cfg(feature = "runtime")]
+use crate::emitters::emitter::CanEmitAI;
+#[cfg(feature = "runtime")]
 use async_openai::{
     Client,
     types::chat::{
@@ -10,9 +14,11 @@ use async_openai::{
         ChatCompletionRequestUserMessage, CreateChatCompletionRequestArgs,
     },
 };
+#[cfg(feature = "runtime")]
 use async_trait::async_trait;
 
-use schemars::{schema_for};
+#[cfg(feature = "runtime")]
+use schemars::schema_for;
 
 pub struct IngredientEmitter;
 
@@ -62,6 +68,7 @@ impl CanEmit<Ingredient> for IngredientEmitter {
     }
 }
 
+#[cfg(feature = "runtime")]
 #[async_trait]
 impl CanEmitAI<Ingredient> for IngredientEmitter {
     async fn emit_ai(
