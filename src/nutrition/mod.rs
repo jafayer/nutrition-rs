@@ -5,7 +5,7 @@
 //! unit registry.
 
 use crate::ast::ast::{Day, DayItem, Document, Exercise, Ingredient, Item, Property, Quantity, Recipe};
-use nutrition_units::{default_unit_for_property, NutritionQuantity, UnitRegistry};
+use crate::nutrition_units::{default_unit_for_property, NutritionQuantity, UnitRegistry};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

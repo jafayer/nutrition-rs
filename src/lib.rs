@@ -7,3 +7,4 @@ pub mod emitters;
 pub mod web_server;
 pub mod nutrition;
 pub mod display;
+pub mod nutrition_units;
