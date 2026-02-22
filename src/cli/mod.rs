@@ -13,6 +13,7 @@ pub use env::DEFAULT_FILE_ENV_VAR;
 #[derive(Parser, Debug)]
 #[command(name = "nutrition")]
 #[command(about = "A nutrition tracking tool for the Nutrition spec", long_about = None)]
+#[command(subcommand_required = true, arg_required_else_help = true)]
 pub struct Cli {
     #[arg(
         short,
@@ -29,16 +30,19 @@ pub struct Cli {
 
 #[derive(clap::Subcommand, Debug)]
 pub enum Commands {
+    /// Validate a nutrition file and print any parse errors.
     Validate {
         #[arg(short, long, help = "Show the parse tree")]
         show_tree: bool,
     },
 
+    /// Generate new markup.
     Generate {
         #[command(subcommand)]
         generate_command: generate::GenerateCommands,
     },
 
+    /// Run a web server that converts JSON to nutrition markup.
     #[cfg(feature = "runtime")]
     Serve {
         #[arg(
@@ -95,7 +99,7 @@ pub enum Commands {
 
         #[arg(long, help = "Output raw JSON instead of the nutrition-label display")]
         json: bool,
-    },
+    }
 }
 
 // ---------------------------------------------------------------------------
