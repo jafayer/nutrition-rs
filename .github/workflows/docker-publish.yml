@@ -51,7 +51,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},value=${{ github.ref_name }},enable=${{ github.event_name == 'push' }}
             type=semver,pattern={{major}},value=${{ github.ref_name }},enable=${{ github.event_name == 'push' }}
             type=sha
-            type=raw,value=latest,enable=${{ github.event_name == 'push' && !contains(github.ref_name, '-') }}
+            type=raw,value=latest,enable=${{ (github.event_name == 'push' && !contains(github.ref_name, '-')) || (github.event_name == 'workflow_dispatch' && inputs.tag != '' && !contains(inputs.tag, '-')) }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
