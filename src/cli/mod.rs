@@ -37,6 +37,7 @@ pub enum Commands {
     },
 
     /// Generate new markup.
+    #[command(visible_aliases = ["gen", "g"])]
     Generate {
         #[command(subcommand)]
         generate_command: generate::GenerateCommands,
