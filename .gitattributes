@@ -1,0 +1,4 @@
+# Associate .nutrition files with the Nutrition language for GitHub Linguist.
+# This takes effect once Nutrition is added to Linguist's languages.yml
+# (see "GitHub Syntax Highlighting" in README.md for contribution steps).
+*.nutrition linguist-language=Nutrition
