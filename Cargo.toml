@@ -5,6 +5,9 @@ members = [".", "nutrition-units"]
 name = "nutrition_rs"
 version = "0.1.0"
 edition = "2024"
+repository = "https://github.com/jafayer/nutrition-rs"
+description = "A CLI for flexible plaintext nutrition tracking"
+homepage = "https://github.com/jafayer/nutrition-rs"
 
 [[bin]]
 name = "nutrition"
@@ -36,3 +39,8 @@ tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread"], optional
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }
 tower = "0.4"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
