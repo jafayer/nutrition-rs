@@ -18,7 +18,7 @@ use std::collections::HashMap;
 /// Return the default unit string for a well-known nutritional property name.
 ///
 /// ```
-/// use nutrition_units::default_unit_for_property;
+/// use nutrition_rs::nutrition_units::default_unit_for_property;
 /// assert_eq!(default_unit_for_property("calories"), Some("kcal"));
 /// assert_eq!(default_unit_for_property("protein"),  Some("g"));
 /// assert_eq!(default_unit_for_property("unknown"),  None);
@@ -39,7 +39,7 @@ pub fn default_unit_for_property(property: &str) -> Option<&'static str> {
 /// A numeric amount paired with a unit string.
 ///
 /// ```
-/// use nutrition_units::NutritionQuantity;
+/// use nutrition_rs::nutrition_units::NutritionQuantity;
 /// let q = NutritionQuantity::new(100.0, "g");
 /// assert_eq!(q.to_string(), "100g");
 /// ```
@@ -103,7 +103,7 @@ impl std::error::Error for ConversionError {}
 /// # Examples
 ///
 /// ```
-/// use nutrition_units::{NutritionQuantity, UnitRegistry};
+/// use nutrition_rs::nutrition_units::{NutritionQuantity, UnitRegistry};
 ///
 /// let reg = UnitRegistry::with_si_defaults();
 /// let kg = NutritionQuantity::new(1.0, "kg");
@@ -176,7 +176,7 @@ impl UnitRegistry {
     /// establishing scoped conversions for that ingredient only.
     ///
     /// ```
-    /// use nutrition_units::{NutritionQuantity, UnitRegistry};
+    /// use nutrition_rs::nutrition_units::{NutritionQuantity, UnitRegistry};
     ///
     /// // @ingredient(100g)(1 cup) "chickpeas"
     /// let reg = UnitRegistry::from_ingredient_quantities(&[
@@ -196,8 +196,6 @@ impl UnitRegistry {
         let (base_amount, base_unit) = &quantities[0];
         for (other_amount, other_unit) in quantities.iter().skip(1) {
             if *base_amount != 0.0 && *other_amount != 0.0 {
-                // base_amount base_unit = other_amount other_unit
-                // ⟹ 1 base_unit = (other_amount / base_amount) other_unit
                 reg.add_conversion(base_unit, other_unit, other_amount / base_amount);
             }
         }
@@ -213,7 +211,6 @@ impl UnitRegistry {
             return Some(qty.clone());
         }
 
-        // BFS over the conversion graph
         let mut visited: HashMap<String, f64> = HashMap::new();
         visited.insert(qty.unit.clone(), qty.amount);
         let mut queue = std::collections::VecDeque::new();
@@ -241,7 +238,7 @@ impl UnitRegistry {
     /// returned.
     ///
     /// ```
-    /// use nutrition_units::{NutritionQuantity, UnitRegistry};
+    /// use nutrition_rs::nutrition_units::{NutritionQuantity, UnitRegistry};
     ///
     /// let reg = UnitRegistry::with_si_defaults();
     /// let a = NutritionQuantity::new(500.0, "g");
@@ -258,11 +255,9 @@ impl UnitRegistry {
         if a.unit == b.unit {
             return Ok(NutritionQuantity::new(a.amount + b.amount, &a.unit));
         }
-        // Convert b → a's unit
         if let Some(b_conv) = self.convert(b, &a.unit) {
             return Ok(NutritionQuantity::new(a.amount + b_conv.amount, &a.unit));
         }
-        // Convert a → b's unit
         if let Some(a_conv) = self.convert(a, &b.unit) {
             return Ok(NutritionQuantity::new(a_conv.amount + b.amount, &b.unit));
         }
@@ -272,10 +267,6 @@ impl UnitRegistry {
         })
     }
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -361,7 +352,6 @@ mod tests {
 
     #[test]
     fn ingredient_scoped_equivalency_100g_equals_1cup() {
-        // @ingredient(100g)(1 cup) "chickpeas"
         let reg = UnitRegistry::from_ingredient_quantities(&[
             (100.0, "g".to_string()),
             (1.0, "cup".to_string()),
@@ -378,7 +368,6 @@ mod tests {
 
     #[test]
     fn ingredient_scoped_equivalency_1pie_equals_8slices() {
-        // @ingredient(1 pie)(8 slices) "pizza"
         let reg = UnitRegistry::from_ingredient_quantities(&[
             (1.0, "pie".to_string()),
             (8.0, "slices".to_string()),
@@ -395,14 +384,13 @@ mod tests {
 
     #[test]
     fn add_with_ingredient_scoped_equivalency() {
-        // Can add cups + grams for chickpeas once we have the registry
         let reg = UnitRegistry::from_ingredient_quantities(&[
             (100.0, "g".to_string()),
             (1.0, "cup".to_string()),
         ]);
 
         let a = NutritionQuantity::new(200.0, "g");
-        let b = NutritionQuantity::new(1.0, "cup"); // = 100 g
+        let b = NutritionQuantity::new(1.0, "cup");
         let sum = reg.add(&a, &b).unwrap();
         assert_eq!(sum.unit, "g");
         assert!((sum.amount - 300.0).abs() < 1e-9);
@@ -410,7 +398,6 @@ mod tests {
 
     #[test]
     fn multihop_conversion_mg_to_kg() {
-        // mg → g → kg (two hops through SI defaults)
         let reg = UnitRegistry::with_si_defaults();
         let mg = NutritionQuantity::new(1_000_000.0, "mg");
         let kg = reg.convert(&mg, "kg").unwrap();

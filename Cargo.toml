@@ -1,10 +1,8 @@
-[workspace]
-members = [".", "nutrition-units"]
-
 [package]
 name = "nutrition_rs"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
 repository = "https://github.com/jafayer/nutrition-rs"
 description = "A CLI for flexible plaintext nutrition tracking"
 homepage = "https://github.com/jafayer/nutrition-rs"
@@ -23,7 +21,6 @@ default = ["runtime"]
 runtime = ["dep:tokio", "dep:axum", "dep:async-openai", "dep:async-trait"]
 
 [dependencies]
-nutrition-units = { path = "nutrition-units" }
 async-openai = { version = "0.32.3", features = ["chat-completion"], optional = true }
 async-trait = { version = "0.1.89", optional = true }
 ariadne = "0.4"

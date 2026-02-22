@@ -980,10 +980,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nutrition-units"
-version = "0.1.0"
-
-[[package]]
 name = "nutrition_rs"
 version = "0.1.0"
 dependencies = [
@@ -994,7 +990,6 @@ dependencies = [
  "chumsky",
  "clap",
  "logos",
- "nutrition-units",
  "schemars",
  "serde",
  "serde_json",

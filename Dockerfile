@@ -11,7 +11,6 @@ WORKDIR /app
 
 COPY src ./src
 COPY Cargo.toml Cargo.lock ./
-COPY nutrition-units ./nutrition-units
 
 RUN cargo build --release
 
