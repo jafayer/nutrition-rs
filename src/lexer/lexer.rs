@@ -5,6 +5,30 @@ use std::ops::Range;
 pub type Span = Range<usize>;
 pub type SpannedToken = (Token, Span);
 
+fn unescape_string_literal(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            out.push(ch);
+            continue;
+        }
+
+        match chars.next() {
+            Some('"') => out.push('"'),
+            Some('\\') => out.push('\\'),
+            Some('n') => out.push('\n'),
+            Some('r') => out.push('\r'),
+            Some('t') => out.push('\t'),
+            Some(other) => out.push(other),
+            None => out.push('\\'),
+        }
+    }
+
+    out
+}
+
 #[derive(Logos, Debug, PartialEq, Clone)]
 pub enum Token {
     #[token("@unit")]
@@ -36,7 +60,7 @@ pub enum Token {
     #[token("=")] Equals,
 
     // Literals
-    #[regex(r#""([^"\\]|\\.)*""#, |lex| lex.slice()[1..lex.slice().len()-1].to_string())]
+    #[regex(r#""([^"\\]|\\.)*""#, |lex| unescape_string_literal(&lex.slice()[1..lex.slice().len()-1]))]
     String(String),
 
     #[regex(r"[0-9]+\.[0-9]+|[0-9]+|\.[0-9]+", |lex| lex.slice().parse::<f64>().unwrap())]

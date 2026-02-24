@@ -45,9 +45,9 @@ fn test_strings() {
 fn test_strings_with_escapes() {
     let mut lexer = Token::lexer(r#""hello\"world" "tab\there" "newline\n""#);
     
-    assert_eq!(lexer.next(), Some(Ok(Token::String("hello\\\"world".to_string()))));
-    assert_eq!(lexer.next(), Some(Ok(Token::String("tab\\there".to_string()))));
-    assert_eq!(lexer.next(), Some(Ok(Token::String("newline\\n".to_string()))));
+    assert_eq!(lexer.next(), Some(Ok(Token::String("hello\"world".to_string()))));
+    assert_eq!(lexer.next(), Some(Ok(Token::String("tab\there".to_string()))));
+    assert_eq!(lexer.next(), Some(Ok(Token::String("newline\n".to_string()))));
     assert_eq!(lexer.next(), None);
 }
 

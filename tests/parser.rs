@@ -201,6 +201,30 @@ fn parse_example_items_individually() {
 		}
 	}
 }
+
+#[test]
+fn parse_ingredient_block_with_escaped_quotes() {
+    let doc = parse_document(r#"@ingredient(100g)(1cup)(164g) "Chickpeas, \"Garbanzo\" Beans" {
+  calories: 164kcal
+  protein: 8.9g
+  fat: 2.6g
+  carbohydrates: 27.4g
+  fiber: 7.6g
+  sugar: 4.8g
+}"#);
+    assert_eq!(doc.items.len(), 1);
+    match &doc.items[0] {
+        Item::Ingredient(ing) => {
+            assert_eq!(ing.aliases, vec!["Chickpeas, \"Garbanzo\" Beans"]);
+            assert_eq!(ing.quantities.len(), 3);
+            assert_quantity(&ing.quantities[0], 100.0, Some("g"));
+            assert_quantity(&ing.quantities[1], 1.0, Some("cup"));
+            assert_quantity(&ing.quantities[2], 164.0, Some("g"));
+            assert_eq!(ing.properties.len(), 6);
+        }
+        other => panic!("unexpected item parsed: {other:?}"),
+    }
+}
 // ---------------------------------------------------------------------------
 // Error-reporting and recovery tests
 // ---------------------------------------------------------------------------
