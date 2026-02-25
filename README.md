@@ -31,6 +31,7 @@ A plain-text nutrition tracking tool built around the **Nutrition language** —
   - [report](#report)
   - [generate](#generate)
   - [serve](#serve)
+- [FFI Example (C)](#ffi-example-c)
 - [VS Code Extension](#vs-code-extension)
   - [Features](#features)
   - [Installation](#installation-1)
@@ -485,6 +486,37 @@ Response:
 @ingredient(100g) "oats" {
     calories: 389
 }
+```
+
+---
+
+## FFI Example (C)
+
+The library exports a C ABI from `src/ffi/mod.rs` and returns JSON strings for all FFI calls.
+
+Build the shared library:
+
+```bash
+cargo build --release
+```
+
+On Linux, the dynamic library will be at:
+
+```text
+target/release/libnutrition_rs.so
+```
+
+Runnable example source:
+
+```text
+examples/ffi_example.c
+```
+
+Compile and run on Linux:
+
+```bash
+cc -o examples/ffi_example examples/ffi_example.c -L target/release -lnutrition_rs
+LD_LIBRARY_PATH=target/release ./examples/ffi_example
 ```
 
 ---

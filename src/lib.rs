@@ -1,10 +1,11 @@
-pub mod lexer;
-pub mod parser;
 pub mod ast;
 pub mod cli;
+pub mod display;
 pub mod emitters;
+pub mod ffi;
+pub mod lexer;
+pub mod nutrition;
+pub mod nutrition_units;
+pub mod parser;
 #[cfg(feature = "runtime")]
 pub mod web_server;
-pub mod nutrition;
-pub mod display;
-pub mod nutrition_units;
