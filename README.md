@@ -519,6 +519,52 @@ cc -o examples/ffi_example examples/ffi_example.c -L target/release -lnutrition_
 LD_LIBRARY_PATH=target/release ./examples/ffi_example
 ```
 
+Automated smoke test (build + compile + run + JSON success check):
+
+```bash
+./scripts/ffi_smoke.sh
+```
+
+### Importing in another language (quick guide)
+
+1. Build the shared library:
+
+```bash
+cargo build --release
+```
+
+2. Load the dynamic library from your host language runtime:
+  - Linux: `target/release/libnutrition_rs.so`
+  - macOS: `target/release/libnutrition_rs.dylib`
+  - Windows: `target\\release\\nutrition_rs.dll`
+
+3. Declare the exported FFI symbols you need (for example):
+  - `nutrition_ffi_parse(const char*) -> char*`
+  - `nutrition_ffi_free_string(char*) -> void`
+
+4. Treat every FFI return value as a UTF-8 JSON envelope:
+  - `{"ok": true|false, "data": ..., "error": "..."|null}`
+
+5. Always release returned strings with `nutrition_ffi_free_string` in your host language.
+
+Python `ctypes` example:
+
+```python
+import ctypes
+
+lib = ctypes.CDLL("target/release/libnutrition_rs.so")
+lib.nutrition_ffi_parse.argtypes = [ctypes.c_char_p]
+lib.nutrition_ffi_parse.restype = ctypes.c_void_p
+lib.nutrition_ffi_free_string.argtypes = [ctypes.c_void_p]
+lib.nutrition_ffi_free_string.restype = None
+
+ptr = lib.nutrition_ffi_parse(b'@ingredient(100g) "oats" { calories: 389 }')
+try:
+   print(ctypes.cast(ptr, ctypes.c_char_p).value.decode("utf-8"))
+finally:
+   lib.nutrition_ffi_free_string(ptr)
+```
+
 ---
 
 ## VS Code Extension
