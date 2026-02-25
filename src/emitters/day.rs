@@ -8,7 +8,7 @@ const DAY_KEYWORD: &str = "@day";
 impl CanEmit<Day> for DayEmitter {
     fn emit(&self, day: &Day) -> String {
         let mut output = String::new();
-        
+
         // Emit day keyword
         output.push_str(DAY_KEYWORD);
         output.push(' ');
@@ -43,7 +43,6 @@ impl CanEmit<Day> for DayEmitter {
                     output.push(')');
                 }
 
-                
                 DayItem::Meal(_meal_label) => {
                     // TODO: support ordered meal labels
                 }

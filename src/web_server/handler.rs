@@ -1,12 +1,7 @@
 use crate::ast::ast::Item;
 
 use axum::{
-    body::Body,
-    extract::Json,
-    http::StatusCode,
-    response::IntoResponse,
-    routing::post,
-    Router,
+    Router, body::Body, extract::Json, http::StatusCode, response::IntoResponse, routing::post,
 };
 use std::net::SocketAddr;
 
@@ -21,21 +16,24 @@ pub async fn to_item(Json(item): Json<Item>) -> impl IntoResponse {
             format!("@ate \"{}\"({})", ate.food_alias, ate.quantity.to_string())
         }
         Item::Exercised(exercised) => {
-            format!("@exercised \"{}\"({})", exercised.exercise_alias, exercised.quantity.to_string())
+            format!(
+                "@exercised \"{}\"({})",
+                exercised.exercise_alias,
+                exercised.quantity.to_string()
+            )
         }
         Item::Comment(comment) => comment,
     };
-    
+
     (StatusCode::OK, output)
 }
 
 pub async fn run_server(port: u16) -> Result<(), Box<dyn std::error::Error>> {
-    let app = Router::new()
-        .route("/", post(handler));
+    let app = Router::new().route("/", post(handler));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
-     
+
     axum::serve(listener, app).await?;
     Ok(())
 }

@@ -1,8 +1,8 @@
-use chumsky::{prelude::*};
+use chumsky::prelude::*;
 use logos::Logos;
 use std::io::BufRead;
 
-use crate::{lexer::lexer::Token, ast::ast::*};
+use crate::{ast::ast::*, lexer::lexer::Token};
 
 // Inside brace-delimited blocks, allow both newlines and inline comments to be skipped.
 fn skip_block_ws<'a>() -> impl Parser<'a, &'a [Token], ()> + Clone {
@@ -20,7 +20,6 @@ fn block_separator<'a>() -> impl Parser<'a, &'a [Token], ()> + Clone {
         .at_least(1)
         .ignored()
 }
-
 
 fn parse_number<'a>() -> impl Parser<'a, &'a [Token], f64> + Clone {
     select! { Token::Number(n) => n }
@@ -41,7 +40,7 @@ fn parse_quantity<'a>() -> impl Parser<'a, &'a [Token], Quantity> + Clone {
                 .repeated()
                 .at_least(1)
                 .collect::<Vec<String>>()
-                .map(|parts| Some(parts.join(" ")))
+                .map(|parts| Some(parts.join(" "))),
         )
         .or(parse_number().map(|n| (n, None)))
         .map(|(amount, unit)| Quantity { amount, unit })
@@ -66,12 +65,7 @@ fn parse_ingredient_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
     just(Token::AtIngredient)
         .or(just(Token::AtFood))
         .ignore_then(parse_quantities_in_parens())
-        .then(
-            parse_string()
-                .repeated()
-                .at_least(1)
-                .collect()
-        )
+        .then(parse_string().repeated().at_least(1).collect())
         .then(
             just(Token::LBrace)
                 .ignore_then(skip_block_ws())
@@ -84,7 +78,7 @@ fn parse_ingredient_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
                         .map(|opt| opt.unwrap_or_default()),
                 )
                 .then_ignore(skip_block_ws())
-                .then_ignore(just(Token::RBrace))
+                .then_ignore(just(Token::RBrace)),
         )
         .map(|((quantities, aliases), properties)| {
             Item::Ingredient(Ingredient {
@@ -100,7 +94,7 @@ fn parse_ingredient_label<'a>() -> impl Parser<'a, &'a [Token], IngredientLabel>
         .then(
             just(Token::LParen)
                 .ignore_then(parse_quantity())
-                .then_ignore(just(Token::RParen))
+                .then_ignore(just(Token::RParen)),
         )
         .map(|(alias, quantity)| IngredientLabel { alias, quantity })
 }
@@ -108,12 +102,7 @@ fn parse_ingredient_label<'a>() -> impl Parser<'a, &'a [Token], IngredientLabel>
 fn parse_recipe_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
     just(Token::AtRecipe)
         .ignore_then(parse_quantities_in_parens())
-        .then(
-            parse_string()
-                .repeated()
-                .at_least(1)
-                .collect()
-        )
+        .then(parse_string().repeated().at_least(1).collect())
         .then(
             just(Token::LBrace)
                 .ignore_then(skip_block_ws())
@@ -124,7 +113,7 @@ fn parse_recipe_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
                         .collect(),
                 )
                 .then_ignore(skip_block_ws())
-                .then_ignore(just(Token::RBrace))
+                .then_ignore(just(Token::RBrace)),
         )
         .map(|((quantities, aliases), ingredients)| {
             Item::Recipe(Recipe {
@@ -142,11 +131,14 @@ fn parse_ate_item<'a>() -> impl Parser<'a, &'a [Token], Ate> + Clone {
             just(Token::LParen)
                 .ignore_then(parse_quantity())
                 .then_ignore(just(Token::RParen))
-                .or_not()
+                .or_not(),
         )
         .map(|(food_alias, quantity)| Ate {
             food_alias,
-            quantity: quantity.unwrap_or(Quantity { amount: 1.0, unit: None }),
+            quantity: quantity.unwrap_or(Quantity {
+                amount: 1.0,
+                unit: None,
+            }),
         })
 }
 
@@ -157,11 +149,14 @@ fn parse_exercised_item<'a>() -> impl Parser<'a, &'a [Token], Exercised> + Clone
             just(Token::LParen)
                 .ignore_then(parse_quantity())
                 .then_ignore(just(Token::RParen))
-                .or_not()
+                .or_not(),
         )
         .map(|(exercise_alias, quantity)| Exercised {
             exercise_alias,
-            quantity: quantity.unwrap_or(Quantity { amount: 1.0, unit: None }),
+            quantity: quantity.unwrap_or(Quantity {
+                amount: 1.0,
+                unit: None,
+            }),
         })
 }
 
@@ -180,22 +175,15 @@ fn parse_day_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
                         .collect(),
                 )
                 .then_ignore(skip_block_ws())
-                .then_ignore(just(Token::RBrace))
+                .then_ignore(just(Token::RBrace)),
         )
-        .map(|(date, items)| {
-            Item::Day(Day { date, items })
-        })
+        .map(|(date, items)| Item::Day(Day { date, items }))
 }
 
 fn parse_exercise_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
     just(Token::AtExercise)
         .ignore_then(parse_quantities_in_parens())
-        .then(
-            parse_string()
-                .repeated()
-                .at_least(1)
-                .collect()
-        )
+        .then(parse_string().repeated().at_least(1).collect())
         .then(
             just(Token::LBrace)
                 .ignore_then(skip_block_ws())
@@ -208,7 +196,7 @@ fn parse_exercise_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
                         .map(|opt| opt.unwrap_or_default()),
                 )
                 .then_ignore(skip_block_ws())
-                .then_ignore(just(Token::RBrace))
+                .then_ignore(just(Token::RBrace)),
         )
         .map(|((quantities, aliases), properties)| {
             Item::Exercise(Exercise {
@@ -246,15 +234,17 @@ pub fn parser<'a>() -> impl Parser<'a, &'a [Token], Document> + Clone {
     // Each item is optionally preceded by newlines and followed by newlines.
     // Comments are parsed as first-class items rather than consumed as
     // whitespace, so that "// comment\n// comment" yields two Comment items.
-    newlines.clone().ignore_then(
-        parse_item()
-            .then_ignore(newlines)
-            .repeated()
-            .at_least(0)
-            .collect()
-    )
-    .then_ignore(end())
-    .map(|items| Document { items })
+    newlines
+        .clone()
+        .ignore_then(
+            parse_item()
+                .then_ignore(newlines)
+                .repeated()
+                .at_least(0)
+                .collect(),
+        )
+        .then_ignore(end())
+        .map(|items| Document { items })
 }
 /// Parse a nutrition source string into a [`Document`].
 /// Returns `Some(Document)` if parsing succeeds, or `None` if the input
@@ -405,11 +395,7 @@ fn split_chunks(tokens: &[Token]) -> Vec<(usize, usize)> {
     }
 
     // Drop chunks that contain nothing but newline tokens.
-    chunks.retain(|(s, e)| {
-        tokens[*s..*e]
-            .iter()
-            .any(|t| !matches!(t, Token::Newline))
-    });
+    chunks.retain(|(s, e)| tokens[*s..*e].iter().any(|t| !matches!(t, Token::Newline)));
 
     chunks
 }
@@ -454,9 +440,7 @@ pub fn parse_with_errors(source: &str) -> (Option<Document>, Vec<String>) {
 
     // If the file has non-whitespace content but no recognisable declarations,
     // report that nothing was understood rather than silently returning empty.
-    let has_content = tokens
-        .iter()
-        .any(|t| !matches!(t, Token::Newline));
+    let has_content = tokens.iter().any(|t| !matches!(t, Token::Newline));
     if has_content && chunks.is_empty() {
         return (None, vec!["no recognizable declarations found".to_string()]);
     }
@@ -498,8 +482,7 @@ pub fn parse_reader_with_errors<R: BufRead>(reader: R) -> (Option<Document>, Vec
         line_num += 1;
         match line_result {
             Ok(line) => {
-                let line_tokens: Vec<Token> =
-                    Token::lexer(&line).filter_map(Result::ok).collect();
+                let line_tokens: Vec<Token> = Token::lexer(&line).filter_map(Result::ok).collect();
                 let count = line_tokens.len();
                 line_numbers.extend(std::iter::repeat(line_num).take(count));
                 tokens.extend(line_tokens);
@@ -507,10 +490,7 @@ pub fn parse_reader_with_errors<R: BufRead>(reader: R) -> (Option<Document>, Vec
                 line_numbers.push(line_num);
             }
             Err(e) => {
-                return (
-                    None,
-                    vec![format!("IO error reading line {line_num}: {e}")],
-                );
+                return (None, vec![format!("IO error reading line {line_num}: {e}")]);
             }
         }
     }
@@ -519,9 +499,7 @@ pub fn parse_reader_with_errors<R: BufRead>(reader: R) -> (Option<Document>, Vec
         return (Some(Document { items: vec![] }), vec![]);
     }
 
-    let has_content = tokens
-        .iter()
-        .any(|t| !matches!(t, Token::Newline));
+    let has_content = tokens.iter().any(|t| !matches!(t, Token::Newline));
     let chunks = split_chunks(&tokens);
     if has_content && chunks.is_empty() {
         return (None, vec!["no recognizable declarations found".to_string()]);
@@ -679,23 +657,18 @@ fn find_unexpected_in_body(
         };
 
         if !is_valid_entry_start {
-            let note_span =
-                note_byte_span(chunk, chunk_idx, chunk_global_start, spans)?;
+            let note_span = note_byte_span(chunk, chunk_idx, chunk_global_start, spans)?;
             let expected_hint = match decl {
                 "@day" => "`@ate`, `@exercised`, or `}`",
                 "@ingredient" | "@food" | "@exercise" => {
                     "a property name (e.g. `calories: 100`), or `}`"
                 }
-                "@recipe" => {
-                    "an ingredient alias (e.g. `\"chickpeas\"(200g)`), or `}`"
-                }
+                "@recipe" => "an ingredient alias (e.g. `\"chickpeas\"(200g)`), or `}`",
                 _ => "a valid entry, or `}`",
             };
             return Some((
                 note_span,
-                format!(
-                    "unexpected `{tok}` in {decl} block — expected {expected_hint}"
-                ),
+                format!("unexpected `{tok}` in {decl} block — expected {expected_hint}"),
             ));
         }
 

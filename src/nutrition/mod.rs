@@ -4,8 +4,10 @@
 //! scaling and summing nutritional properties using the `nutrition-units`
 //! unit registry.
 
-use crate::ast::ast::{Day, DayItem, Document, Exercise, Ingredient, Item, Property, Quantity, Recipe};
-use crate::nutrition_units::{default_unit_for_property, NutritionQuantity, UnitRegistry};
+use crate::ast::ast::{
+    Day, DayItem, Document, Exercise, Ingredient, Item, Property, Quantity, Recipe,
+};
+use crate::nutrition_units::{NutritionQuantity, UnitRegistry, default_unit_for_property};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -121,7 +123,9 @@ fn sum_properties(all_properties: Vec<Vec<Property>>) -> Vec<Property> {
                         } else {
                             format!("{}_{}", prop.name, nq.unit)
                         };
-                        let entry = totals.entry(key).or_insert_with(|| NutritionQuantity::new(0.0, &nq.unit));
+                        let entry = totals
+                            .entry(key)
+                            .or_insert_with(|| NutritionQuantity::new(0.0, &nq.unit));
                         entry.amount += nq.amount;
                     }
                 },
@@ -138,7 +142,11 @@ fn sum_properties(all_properties: Vec<Vec<Property>>) -> Vec<Property> {
             name,
             value: Quantity {
                 amount: nq.amount,
-                unit: if nq.unit.is_empty() { None } else { Some(nq.unit) },
+                unit: if nq.unit.is_empty() {
+                    None
+                } else {
+                    Some(nq.unit)
+                },
             },
         })
         .collect()
@@ -207,7 +215,9 @@ fn subtract_properties(intake: &[Property], exercise: &[Property]) -> Vec<Proper
                 // Try unit-aware subtraction: existing - exercise.
                 let neg = NutritionQuantity::new(-nq.amount, &nq.unit);
                 match reg.add(existing, &neg) {
-                    Ok(diff) => { result.insert(prop.name.clone(), diff); }
+                    Ok(diff) => {
+                        result.insert(prop.name.clone(), diff);
+                    }
                     Err(_) => {
                         // Incompatible units – subtract numerically.
                         let mut entry = existing.clone();
@@ -218,7 +228,10 @@ fn subtract_properties(intake: &[Property], exercise: &[Property]) -> Vec<Proper
             }
             None => {
                 // Exercise-only property – net is negative.
-                result.insert(prop.name.clone(), NutritionQuantity::new(-nq.amount, &nq.unit));
+                result.insert(
+                    prop.name.clone(),
+                    NutritionQuantity::new(-nq.amount, &nq.unit),
+                );
             }
         }
     }
@@ -229,7 +242,11 @@ fn subtract_properties(intake: &[Property], exercise: &[Property]) -> Vec<Proper
             name,
             value: Quantity {
                 amount: nq.amount,
-                unit: if nq.unit.is_empty() { None } else { Some(nq.unit) },
+                unit: if nq.unit.is_empty() {
+                    None
+                } else {
+                    Some(nq.unit)
+                },
             },
         })
         .collect()
@@ -363,7 +380,9 @@ pub fn query_nutrition(
         }
     }
 
-    Err(format!("No ingredient or recipe named '{alias}' found in document."))
+    Err(format!(
+        "No ingredient or recipe named '{alias}' found in document."
+    ))
 }
 
 /// Compute the nutritional properties burned by a single exercise at the given
@@ -422,7 +441,8 @@ pub fn compute_daily_report(document: &Document, day: &Day) -> DailyNutritionRep
                     let report = compute_ingredient_nutrition(ing, Some(&ate.quantity));
                     intake_all.push(report.properties);
                 } else if let Some(rec) = recipes.get(&ate.food_alias) {
-                    if let Ok(report) = compute_recipe_nutrition(document, rec, Some(&ate.quantity)) {
+                    if let Ok(report) = compute_recipe_nutrition(document, rec, Some(&ate.quantity))
+                    {
                         intake_all.push(report.properties);
                     }
                 }

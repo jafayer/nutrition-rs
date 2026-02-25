@@ -1,5 +1,5 @@
 use crate::ast::ast::Recipe;
-use crate::emitters::emitter::{CanEmit, quoted_string, format_quantity};
+use crate::emitters::emitter::{CanEmit, format_quantity, quoted_string};
 
 pub struct RecipeEmitter;
 
@@ -8,7 +8,7 @@ const RECIPE_KEYWORD: &str = "@recipe";
 impl CanEmit<Recipe> for RecipeEmitter {
     fn emit(&self, recipe: &Recipe) -> String {
         let mut output = String::new();
-        
+
         // Emit aliases
         output.push_str(RECIPE_KEYWORD);
         for quantity in &recipe.quantities {
@@ -17,7 +17,7 @@ impl CanEmit<Recipe> for RecipeEmitter {
             output.push(')');
         }
         output.push(' ');
-        
+
         for alias in recipe.aliases.iter() {
             quoted_string(&mut output, alias);
             output.push(' ');
@@ -26,7 +26,6 @@ impl CanEmit<Recipe> for RecipeEmitter {
         // start block
         output.push('{');
 
-        
         if recipe.ingredients.is_empty() {
             // add empty ingredients list
             output.push_str(" }");
@@ -46,10 +45,7 @@ impl CanEmit<Recipe> for RecipeEmitter {
         }
 
         output.push('\n');
-        
+
         output
     }
 }
-
-
-

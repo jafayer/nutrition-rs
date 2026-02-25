@@ -1,16 +1,24 @@
 //! Integration tests for the nutrition computation module.
 
-use nutrition_rs::ast::ast::{Ate, Day, DayItem, Document, Exercise, Exercised, Ingredient, IngredientLabel, Item, Property, Quantity, Recipe};
+use nutrition_rs::ast::ast::{
+    Ate, Day, DayItem, Document, Exercise, Exercised, Ingredient, IngredientLabel, Item, Property,
+    Quantity, Recipe,
+};
 use nutrition_rs::nutrition::{
-    aggregate_reports, compute_daily_report, compute_ingredient_nutrition, compute_recipe_nutrition,
-    compute_report, query_nutrition,
+    aggregate_reports, compute_daily_report, compute_ingredient_nutrition,
+    compute_recipe_nutrition, compute_report, query_nutrition,
 };
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn make_ingredient(alias: &str, base_amount: f64, base_unit: &str, props: Vec<(&str, f64, Option<&str>)>) -> Ingredient {
+fn make_ingredient(
+    alias: &str,
+    base_amount: f64,
+    base_unit: &str,
+    props: Vec<(&str, f64, Option<&str>)>,
+) -> Ingredient {
     Ingredient {
         aliases: vec![alias.to_string()],
         quantities: vec![Quantity {
@@ -37,8 +45,16 @@ fn make_ingredient(alias: &str, base_amount: f64, base_unit: &str, props: Vec<(&
 #[test]
 fn scale_ingredient_same_unit_doubles_properties() {
     // 100 g → 269 kcal; request 200 g → 538 kcal
-    let ing = make_ingredient("chickpeas", 100.0, "g", vec![("calories", 269.0, Some("kcal"))]);
-    let req = Quantity { amount: 200.0, unit: Some("g".to_string()) };
+    let ing = make_ingredient(
+        "chickpeas",
+        100.0,
+        "g",
+        vec![("calories", 269.0, Some("kcal"))],
+    );
+    let req = Quantity {
+        amount: 200.0,
+        unit: Some("g".to_string()),
+    };
     let report = compute_ingredient_nutrition(&ing, Some(&req));
 
     assert_eq!(report.name, "chickpeas");
@@ -61,11 +77,22 @@ fn scale_ingredient_no_quantity_is_identity() {
 #[test]
 fn scale_ingredient_cross_unit_via_equivalency() {
     // @ingredient(100g)(1 cup) "chickpeas" → 1 cup = 100 g
-    let mut ing = make_ingredient("chickpeas", 100.0, "g", vec![("calories", 269.0, Some("kcal"))]);
-    ing.quantities.push(Quantity { amount: 1.0, unit: Some("cup".to_string()) });
+    let mut ing = make_ingredient(
+        "chickpeas",
+        100.0,
+        "g",
+        vec![("calories", 269.0, Some("kcal"))],
+    );
+    ing.quantities.push(Quantity {
+        amount: 1.0,
+        unit: Some("cup".to_string()),
+    });
 
     // Request 2 cups → scale = 2 (because 1 cup = 100 g ≡ base, so 2 cups = 200 g = 2×)
-    let req = Quantity { amount: 2.0, unit: Some("cup".to_string()) };
+    let req = Quantity {
+        amount: 2.0,
+        unit: Some("cup".to_string()),
+    };
     let report = compute_ingredient_nutrition(&ing, Some(&req));
 
     assert!((report.properties[0].value.amount - 538.0).abs() < 1e-6);
@@ -77,27 +104,52 @@ fn unitless_calories_in_ingredient_are_normalised_to_kcal() {
     // After the fix, query output should show the kcal unit.
     let ing = Ingredient {
         aliases: vec!["chickpeas".to_string()],
-        quantities: vec![Quantity { amount: 100.0, unit: Some("g".to_string()) }],
+        quantities: vec![Quantity {
+            amount: 100.0,
+            unit: Some("g".to_string()),
+        }],
         properties: vec![
             Property {
                 name: "calories".to_string(),
-                value: Quantity { amount: 269.0, unit: None }, // ← no unit
+                value: Quantity {
+                    amount: 269.0,
+                    unit: None,
+                }, // ← no unit
             },
             Property {
                 name: "protein".to_string(),
-                value: Quantity { amount: 14.5, unit: None }, // ← no unit; should become g
+                value: Quantity {
+                    amount: 14.5,
+                    unit: None,
+                }, // ← no unit; should become g
             },
         ],
     };
 
     let report = compute_ingredient_nutrition(&ing, None);
 
-    let cal = report.properties.iter().find(|p| p.name == "calories").unwrap();
-    assert_eq!(cal.value.unit.as_deref(), Some("kcal"), "calories should be normalised to kcal");
+    let cal = report
+        .properties
+        .iter()
+        .find(|p| p.name == "calories")
+        .unwrap();
+    assert_eq!(
+        cal.value.unit.as_deref(),
+        Some("kcal"),
+        "calories should be normalised to kcal"
+    );
     assert!((cal.value.amount - 269.0).abs() < 1e-6);
 
-    let prot = report.properties.iter().find(|p| p.name == "protein").unwrap();
-    assert_eq!(prot.value.unit.as_deref(), Some("g"), "protein should be normalised to g");
+    let prot = report
+        .properties
+        .iter()
+        .find(|p| p.name == "protein")
+        .unwrap();
+    assert_eq!(
+        prot.value.unit.as_deref(),
+        Some("g"),
+        "protein should be normalised to g"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -118,15 +170,24 @@ fn recipe_nutrition_sums_ingredient_properties() {
 
     let recipe = Recipe {
         aliases: vec!["pancakes".to_string()],
-        quantities: vec![Quantity { amount: 4.0, unit: None }],
+        quantities: vec![Quantity {
+            amount: 4.0,
+            unit: None,
+        }],
         ingredients: vec![
             IngredientLabel {
                 alias: "flour".to_string(),
-                quantity: Quantity { amount: 200.0, unit: Some("g".to_string()) },
+                quantity: Quantity {
+                    amount: 200.0,
+                    unit: Some("g".to_string()),
+                },
             },
             IngredientLabel {
                 alias: "milk".to_string(),
-                quantity: Quantity { amount: 300.0, unit: Some("g".to_string()) },
+                quantity: Quantity {
+                    amount: 300.0,
+                    unit: Some("g".to_string()),
+                },
             },
         ],
     };
@@ -140,7 +201,11 @@ fn recipe_nutrition_sums_ingredient_properties() {
     let report = compute_recipe_nutrition(&doc, &recipe, None).unwrap();
 
     // flour: 200/100 * 364 = 728; milk: 300/100 * 42 = 126; total = 854 kcal
-    let cal = report.properties.iter().find(|p| p.name == "calories").unwrap();
+    let cal = report
+        .properties
+        .iter()
+        .find(|p| p.name == "calories")
+        .unwrap();
     assert!((cal.value.amount - 854.0).abs() < 1e-6);
     assert_eq!(cal.value.unit.as_deref(), Some("kcal"));
 }
@@ -153,15 +218,24 @@ fn recipe_nutrition_with_requested_quantity_scales_result() {
 
     let recipe = Recipe {
         aliases: vec!["pancakes".to_string()],
-        quantities: vec![Quantity { amount: 4.0, unit: None }],
+        quantities: vec![Quantity {
+            amount: 4.0,
+            unit: None,
+        }],
         ingredients: vec![
             IngredientLabel {
                 alias: "flour".to_string(),
-                quantity: Quantity { amount: 200.0, unit: Some("g".to_string()) },
+                quantity: Quantity {
+                    amount: 200.0,
+                    unit: Some("g".to_string()),
+                },
             },
             IngredientLabel {
                 alias: "milk".to_string(),
-                quantity: Quantity { amount: 300.0, unit: Some("g".to_string()) },
+                quantity: Quantity {
+                    amount: 300.0,
+                    unit: Some("g".to_string()),
+                },
             },
         ],
     };
@@ -172,11 +246,18 @@ fn recipe_nutrition_with_requested_quantity_scales_result() {
         Item::Recipe(recipe.clone()),
     ]);
 
-    let req = Quantity { amount: 2.0, unit: None };
+    let req = Quantity {
+        amount: 2.0,
+        unit: None,
+    };
     let report = compute_recipe_nutrition(&doc, &recipe, Some(&req)).unwrap();
 
     // 854 * (2/4) = 427 kcal
-    let cal = report.properties.iter().find(|p| p.name == "calories").unwrap();
+    let cal = report
+        .properties
+        .iter()
+        .find(|p| p.name == "calories")
+        .unwrap();
     assert!((cal.value.amount - 427.0).abs() < 1e-6);
 }
 
@@ -187,7 +268,10 @@ fn recipe_unknown_ingredient_returns_error() {
         quantities: vec![],
         ingredients: vec![IngredientLabel {
             alias: "unicorn dust".to_string(),
-            quantity: Quantity { amount: 1.0, unit: None },
+            quantity: Quantity {
+                amount: 1.0,
+                unit: None,
+            },
         }],
     };
     let doc = make_document(vec![Item::Recipe(recipe.clone())]);
@@ -215,7 +299,12 @@ fn nutrition_report_to_json_is_valid_json() {
 
 #[test]
 fn query_nutrition_finds_ingredient() {
-    let ing = make_ingredient("chickpeas", 100.0, "g", vec![("calories", 269.0, Some("kcal"))]);
+    let ing = make_ingredient(
+        "chickpeas",
+        100.0,
+        "g",
+        vec![("calories", 269.0, Some("kcal"))],
+    );
     let doc = make_document(vec![Item::Ingredient(ing)]);
     let report = query_nutrition(&doc, "chickpeas", None).unwrap();
     assert_eq!(report.name, "chickpeas");
@@ -226,10 +315,16 @@ fn query_nutrition_finds_recipe() {
     let flour = make_ingredient("flour", 100.0, "g", vec![("calories", 364.0, Some("kcal"))]);
     let recipe = Recipe {
         aliases: vec!["bread".to_string()],
-        quantities: vec![Quantity { amount: 1.0, unit: None }],
+        quantities: vec![Quantity {
+            amount: 1.0,
+            unit: None,
+        }],
         ingredients: vec![IngredientLabel {
             alias: "flour".to_string(),
-            quantity: Quantity { amount: 100.0, unit: Some("g".to_string()) },
+            quantity: Quantity {
+                amount: 100.0,
+                unit: Some("g".to_string()),
+            },
         }],
     };
     let doc = make_document(vec![Item::Ingredient(flour), Item::Recipe(recipe)]);
@@ -247,7 +342,12 @@ fn query_nutrition_unknown_alias_returns_error() {
 // Daily report computation
 // ---------------------------------------------------------------------------
 
-fn make_exercise(alias: &str, base_amount: f64, base_unit: &str, props: Vec<(&str, f64, Option<&str>)>) -> Exercise {
+fn make_exercise(
+    alias: &str,
+    base_amount: f64,
+    base_unit: &str,
+    props: Vec<(&str, f64, Option<&str>)>,
+) -> Exercise {
     Exercise {
         aliases: vec![alias.to_string()],
         quantities: vec![Quantity {
@@ -270,12 +370,20 @@ fn make_exercise(alias: &str, base_amount: f64, base_unit: &str, props: Vec<(&st
 #[test]
 fn daily_report_sums_ate_intake() {
     // 100g chickpeas = 269 kcal; eat 200g → 538 kcal
-    let ing = make_ingredient("chickpeas", 100.0, "g", vec![("calories", 269.0, Some("kcal"))]);
+    let ing = make_ingredient(
+        "chickpeas",
+        100.0,
+        "g",
+        vec![("calories", 269.0, Some("kcal"))],
+    );
     let day = Day {
         date: "2026-01-01".to_string(),
         items: vec![DayItem::Ate(Ate {
             food_alias: "chickpeas".to_string(),
-            quantity: Quantity { amount: 200.0, unit: Some("g".to_string()) },
+            quantity: Quantity {
+                amount: 200.0,
+                unit: Some("g".to_string()),
+            },
         })],
     };
     let doc = make_document(vec![Item::Ingredient(ing), Item::Day(day.clone())]);
@@ -295,17 +403,28 @@ fn daily_report_subtracts_exercise_calories() {
     // eat 500 kcal, burn 200 kcal running → net 300 kcal
     let ing = make_ingredient("rice", 100.0, "g", vec![("calories", 130.0, Some("kcal"))]);
     // 100g rice = 130 kcal; eating ~385g → 500 kcal (approx)
-    let ex = make_exercise("running", 30.0, "min", vec![("calories", 200.0, Some("kcal"))]);
+    let ex = make_exercise(
+        "running",
+        30.0,
+        "min",
+        vec![("calories", 200.0, Some("kcal"))],
+    );
     let day = Day {
         date: "2026-02-01".to_string(),
         items: vec![
             DayItem::Ate(Ate {
                 food_alias: "rice".to_string(),
-                quantity: Quantity { amount: 100.0, unit: Some("g".to_string()) },
+                quantity: Quantity {
+                    amount: 100.0,
+                    unit: Some("g".to_string()),
+                },
             }),
             DayItem::Exercised(Exercised {
                 exercise_alias: "running".to_string(),
-                quantity: Quantity { amount: 30.0, unit: Some("min".to_string()) },
+                quantity: Quantity {
+                    amount: 30.0,
+                    unit: Some("min".to_string()),
+                },
             }),
         ],
     };
@@ -319,7 +438,11 @@ fn daily_report_subtracts_exercise_calories() {
     let intake_cal = report.intake.iter().find(|p| p.name == "calories").unwrap();
     assert!((intake_cal.value.amount - 130.0).abs() < 1e-6);
 
-    let ex_cal = report.exercise.iter().find(|p| p.name == "calories").unwrap();
+    let ex_cal = report
+        .exercise
+        .iter()
+        .find(|p| p.name == "calories")
+        .unwrap();
     assert!((ex_cal.value.amount - 200.0).abs() < 1e-6);
 
     let net_cal = report.net.iter().find(|p| p.name == "calories").unwrap();
@@ -334,21 +457,30 @@ fn compute_report_filters_by_date_range() {
         date: "2026-01-01".to_string(),
         items: vec![DayItem::Ate(Ate {
             food_alias: "apple".to_string(),
-            quantity: Quantity { amount: 1.0, unit: Some("unit".to_string()) },
+            quantity: Quantity {
+                amount: 1.0,
+                unit: Some("unit".to_string()),
+            },
         })],
     };
     let day2 = Day {
         date: "2026-01-15".to_string(),
         items: vec![DayItem::Ate(Ate {
             food_alias: "apple".to_string(),
-            quantity: Quantity { amount: 2.0, unit: Some("unit".to_string()) },
+            quantity: Quantity {
+                amount: 2.0,
+                unit: Some("unit".to_string()),
+            },
         })],
     };
     let day3 = Day {
         date: "2026-02-01".to_string(),
         items: vec![DayItem::Ate(Ate {
             food_alias: "apple".to_string(),
-            quantity: Quantity { amount: 3.0, unit: Some("unit".to_string()) },
+            quantity: Quantity {
+                amount: 3.0,
+                unit: Some("unit".to_string()),
+            },
         })],
     };
     let doc = make_document(vec![
@@ -368,8 +500,14 @@ fn compute_report_filters_by_date_range() {
 #[test]
 fn compute_report_no_filter_returns_all_days() {
     let ing = make_ingredient("apple", 1.0, "unit", vec![("calories", 80.0, Some("kcal"))]);
-    let day1 = Day { date: "2026-01-01".to_string(), items: vec![] };
-    let day2 = Day { date: "2026-03-01".to_string(), items: vec![] };
+    let day1 = Day {
+        date: "2026-01-01".to_string(),
+        items: vec![],
+    };
+    let day2 = Day {
+        date: "2026-03-01".to_string(),
+        items: vec![],
+    };
     let doc = make_document(vec![
         Item::Ingredient(ing),
         Item::Day(day1),
@@ -386,7 +524,10 @@ fn daily_report_unknown_food_skipped_gracefully() {
         date: "2026-01-01".to_string(),
         items: vec![DayItem::Ate(Ate {
             food_alias: "unicorn_dust".to_string(),
-            quantity: Quantity { amount: 10.0, unit: Some("g".to_string()) },
+            quantity: Quantity {
+                amount: 10.0,
+                unit: Some("g".to_string()),
+            },
         })],
     };
     let doc = make_document(vec![Item::Day(day.clone())]);
@@ -406,10 +547,16 @@ fn unitless_calories_and_kcal_exercise_produce_consistent_units() {
     // and the net should correctly reflect the arithmetic — with a kcal unit.
     let ing = Ingredient {
         aliases: vec!["oats".to_string()],
-        quantities: vec![Quantity { amount: 100.0, unit: Some("g".to_string()) }],
+        quantities: vec![Quantity {
+            amount: 100.0,
+            unit: Some("g".to_string()),
+        }],
         properties: vec![Property {
             name: "calories".to_string(),
-            value: Quantity { amount: 300.0, unit: None }, // ← no unit
+            value: Quantity {
+                amount: 300.0,
+                unit: None,
+            }, // ← no unit
         }],
     };
     let ex = make_exercise("run", 30.0, "min", vec![("calories", 200.0, Some("kcal"))]);
@@ -418,11 +565,17 @@ fn unitless_calories_and_kcal_exercise_produce_consistent_units() {
         items: vec![
             DayItem::Ate(Ate {
                 food_alias: "oats".to_string(),
-                quantity: Quantity { amount: 100.0, unit: Some("g".to_string()) },
+                quantity: Quantity {
+                    amount: 100.0,
+                    unit: Some("g".to_string()),
+                },
             }),
             DayItem::Exercised(Exercised {
                 exercise_alias: "run".to_string(),
-                quantity: Quantity { amount: 30.0, unit: Some("min".to_string()) },
+                quantity: Quantity {
+                    amount: 30.0,
+                    unit: Some("min".to_string()),
+                },
             }),
         ],
     };
@@ -438,7 +591,11 @@ fn unitless_calories_and_kcal_exercise_produce_consistent_units() {
     assert_eq!(intake_cal.value.unit.as_deref(), Some("kcal"));
     assert!((intake_cal.value.amount - 300.0).abs() < 1e-6);
 
-    let ex_cal = report.exercise.iter().find(|p| p.name == "calories").unwrap();
+    let ex_cal = report
+        .exercise
+        .iter()
+        .find(|p| p.name == "calories")
+        .unwrap();
     assert_eq!(ex_cal.value.unit.as_deref(), Some("kcal"));
 
     let net_cal = report.net.iter().find(|p| p.name == "calories").unwrap();
@@ -455,19 +612,30 @@ fn unitless_calories_and_kcal_exercise_produce_consistent_units() {
 #[test]
 fn aggregate_reports_averages_properties_across_days() {
     // Two days: 200 kcal on day 1, 400 kcal on day 2 → average 300 kcal.
-    let ing = make_ingredient("apple", 1.0, "unit", vec![("calories", 200.0, Some("kcal"))]);
+    let ing = make_ingredient(
+        "apple",
+        1.0,
+        "unit",
+        vec![("calories", 200.0, Some("kcal"))],
+    );
     let day1 = Day {
         date: "2026-01-01".to_string(),
         items: vec![DayItem::Ate(Ate {
             food_alias: "apple".to_string(),
-            quantity: Quantity { amount: 1.0, unit: Some("unit".to_string()) },
+            quantity: Quantity {
+                amount: 1.0,
+                unit: Some("unit".to_string()),
+            },
         })],
     };
     let day2 = Day {
         date: "2026-01-02".to_string(),
         items: vec![DayItem::Ate(Ate {
             food_alias: "apple".to_string(),
-            quantity: Quantity { amount: 2.0, unit: Some("unit".to_string()) },
+            quantity: Quantity {
+                amount: 2.0,
+                unit: Some("unit".to_string()),
+            },
         })],
     };
     let doc = make_document(vec![
@@ -496,7 +664,10 @@ fn aggregate_reports_single_day_returns_same_values() {
         date: "2026-03-01".to_string(),
         items: vec![DayItem::Ate(Ate {
             food_alias: "rice".to_string(),
-            quantity: Quantity { amount: 100.0, unit: Some("g".to_string()) },
+            quantity: Quantity {
+                amount: 100.0,
+                unit: Some("g".to_string()),
+            },
         })],
     };
     let doc = make_document(vec![Item::Ingredient(ing), Item::Day(day)]);
@@ -514,17 +685,28 @@ fn aggregate_reports_single_day_returns_same_values() {
 fn aggregate_reports_subtracts_exercise_in_net() {
     // eat 300 kcal, burn 100 kcal/day × 2 days → net avg = 200 kcal
     let ing = make_ingredient("rice", 100.0, "g", vec![("calories", 300.0, Some("kcal"))]);
-    let ex = make_exercise("cycling", 30.0, "min", vec![("calories", 100.0, Some("kcal"))]);
+    let ex = make_exercise(
+        "cycling",
+        30.0,
+        "min",
+        vec![("calories", 100.0, Some("kcal"))],
+    );
     let make_day = |date: &str| Day {
         date: date.to_string(),
         items: vec![
             DayItem::Ate(Ate {
                 food_alias: "rice".to_string(),
-                quantity: Quantity { amount: 100.0, unit: Some("g".to_string()) },
+                quantity: Quantity {
+                    amount: 100.0,
+                    unit: Some("g".to_string()),
+                },
             }),
             DayItem::Exercised(Exercised {
                 exercise_alias: "cycling".to_string(),
-                quantity: Quantity { amount: 30.0, unit: Some("min".to_string()) },
+                quantity: Quantity {
+                    amount: 30.0,
+                    unit: Some("min".to_string()),
+                },
             }),
         ],
     };

@@ -103,8 +103,8 @@ fn test_day_parsing() {
 
 #[test]
 fn test_complex_document_analysis() {
-    let source = fs::read_to_string("examples/test.nutrition")
-        .expect("Failed to read test.nutrition");
+    let source =
+        fs::read_to_string("examples/test.nutrition").expect("Failed to read test.nutrition");
 
     let mut analyzer = SemanticAnalyzer::new();
     if let Some(doc) = parse(&source) {

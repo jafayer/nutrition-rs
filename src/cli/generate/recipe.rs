@@ -1,9 +1,7 @@
-
+use crate::ast::ast::{IngredientLabel, Quantity, Recipe};
 use crate::emitters::emitter::CanEmit;
 use crate::emitters::recipe::RecipeEmitter;
-use crate::ast::ast::{Recipe, Quantity, IngredientLabel};
 use clap::Parser;
-
 
 // usage nutrition gen recipe \
 //    --quantity 200g \
@@ -17,10 +15,10 @@ use clap::Parser;
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 pub struct RecipeGenerateArgs {
-    #[clap(long = "quantity", short='q', required = true)]
+    #[clap(long = "quantity", short = 'q', required = true)]
     pub quantities: Vec<String>,
 
-    #[clap(long = "alias", short='a', required = true)]
+    #[clap(long = "alias", short = 'a', required = true)]
     pub aliases: Vec<String>,
 
     #[clap(long = "ingredient")]
@@ -29,16 +27,22 @@ pub struct RecipeGenerateArgs {
 
 impl RecipeGenerateArgs {
     pub fn to_recipe(&self) -> Recipe {
-        let quantities = self.quantities.iter().map(|q_str| {
-            parse_quantity(q_str)
-        }).collect();
+        let quantities = self
+            .quantities
+            .iter()
+            .map(|q_str| parse_quantity(q_str))
+            .collect();
 
-        let ingredients = self.ingredients.iter().map(|ing_str| {
-            let parts: Vec<&str> = ing_str.split('(').collect();
-            let alias = parts[0].to_string();
-            let quantity = parse_quantity(parts[1].trim_end_matches(')'));
-            IngredientLabel { alias, quantity }
-        }).collect();
+        let ingredients = self
+            .ingredients
+            .iter()
+            .map(|ing_str| {
+                let parts: Vec<&str> = ing_str.split('(').collect();
+                let alias = parts[0].to_string();
+                let quantity = parse_quantity(parts[1].trim_end_matches(')'));
+                IngredientLabel { alias, quantity }
+            })
+            .collect();
 
         Recipe {
             quantities,
@@ -73,7 +77,11 @@ fn parse_quantity(q_str: &str) -> Quantity {
     }
 
     let amount: f64 = amount_str.parse().unwrap_or(0.0);
-    let unit = if unit_str.is_empty() { None } else { Some(unit_str) };
+    let unit = if unit_str.is_empty() {
+        None
+    } else {
+        Some(unit_str)
+    };
 
     Quantity { amount, unit }
 }

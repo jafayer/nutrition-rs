@@ -1,6 +1,6 @@
+use crate::ast::ast::{Ingredient, Property, Quantity};
 use crate::emitters::emitter::CanEmit;
 use crate::emitters::ingredient::IngredientEmitter;
-use crate::ast::ast::{Ingredient, Quantity, Property};
 use clap::Parser;
 
 #[cfg(feature = "runtime")]
@@ -20,7 +20,11 @@ pub struct IngredientGenerateArgs {
     pub quantities: Vec<String>,
     #[clap(short = 'a', long = "alias", help = "Aliases for the recipe")]
     pub aliases: Vec<String>,
-    #[clap(short = 'p', long = "property", help = "Properties for the recipe in the format 'label:quantity'")]
+    #[clap(
+        short = 'p',
+        long = "property",
+        help = "Properties for the recipe in the format 'label:quantity'"
+    )]
     pub properties: Vec<String>,
     #[clap(long = "ai", help = "Use AI to generate ingredient details")]
     pub ai: bool,
@@ -28,16 +32,22 @@ pub struct IngredientGenerateArgs {
 
 impl IngredientGenerateArgs {
     pub fn to_ingredient(&self) -> Ingredient {
-        let quantities = self.quantities.iter().map(|q_str| {
-            Quantity::from_string(q_str).unwrap()
-        }).collect();
+        let quantities = self
+            .quantities
+            .iter()
+            .map(|q_str| Quantity::from_string(q_str).unwrap())
+            .collect();
 
-        let properties = self.properties.iter().map(|prop_str| {
-            let parts: Vec<&str> = prop_str.splitn(2, ':').collect();
-            let name = parts[0].trim().to_string();
-            let value = Quantity::from_string(parts[1].trim()).unwrap();
-            Property { name, value }
-        }).collect();
+        let properties = self
+            .properties
+            .iter()
+            .map(|prop_str| {
+                let parts: Vec<&str> = prop_str.splitn(2, ':').collect();
+                let name = parts[0].trim().to_string();
+                let value = Quantity::from_string(parts[1].trim()).unwrap();
+                Property { name, value }
+            })
+            .collect();
 
         Ingredient {
             aliases: self.aliases.clone(),

@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Document {
@@ -19,7 +19,6 @@ pub enum Item {
     Exercised(Exercised),
     Comment(String),
 }
-
 
 /**
  * Quantity represents a numeric amount with an optional unit.
@@ -76,10 +75,12 @@ impl Quantity {
 
     pub fn from_json(value: &serde_json::Value) -> Result<Self, String> {
         if let Some(obj) = value.as_object() {
-            let amount = obj.get("amount")
+            let amount = obj
+                .get("amount")
                 .and_then(|v| v.as_f64())
                 .ok_or("Missing or invalid 'amount' field in Quantity JSON.")?;
-            let unit = obj.get("unit")
+            let unit = obj
+                .get("unit")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
             Ok(Quantity { amount, unit })
@@ -113,11 +114,13 @@ impl Property {
 
     pub fn from_json(value: &serde_json::Value) -> Result<Self, String> {
         if let Some(obj) = value.as_object() {
-            let name = obj.get("name")
+            let name = obj
+                .get("name")
                 .and_then(|v| v.as_str())
                 .ok_or("Missing or invalid 'name' field in Property JSON.")?
                 .to_string();
-            let value_field = obj.get("value")
+            let value_field = obj
+                .get("value")
                 .ok_or("Missing 'value' field in Property JSON.")?;
             let value = Quantity::from_json(value_field)?;
             Ok(Property { name, value })
@@ -126,7 +129,6 @@ impl Property {
         }
     }
 }
-
 
 /**
  * Ingredient represents a food ingredient with aliases, quantities, and optionally
@@ -174,35 +176,40 @@ impl Ingredient {
 
     pub fn from_json(value: &serde_json::Value) -> Result<Self, String> {
         if let Some(obj) = value.as_object() {
-            let aliases = obj.get("aliases")
+            let aliases = obj
+                .get("aliases")
                 .and_then(|v| v.as_array())
                 .ok_or("Missing or invalid 'aliases' field in Ingredient JSON.")?
                 .iter()
                 .map(|v| v.as_str().unwrap_or("").to_string())
                 .collect();
 
-            let quantities = obj.get("quantities")
+            let quantities = obj
+                .get("quantities")
                 .and_then(|v| v.as_array())
                 .ok_or("Missing or invalid 'quantities' field in Ingredient JSON.")?
                 .iter()
                 .map(Quantity::from_json)
                 .collect::<Result<Vec<Quantity>, String>>()?;
 
-            let properties = obj.get("properties")
+            let properties = obj
+                .get("properties")
                 .and_then(|v| v.as_array())
                 .ok_or("Missing or invalid 'properties' field in Ingredient JSON.")?
                 .iter()
                 .map(Property::from_json)
                 .collect::<Result<Vec<Property>, String>>()?;
 
-            Ok(Ingredient { aliases, quantities, properties })
+            Ok(Ingredient {
+                aliases,
+                quantities,
+                properties,
+            })
         } else {
             Err("Expected a JSON object for Ingredient.".to_string())
         }
     }
-
 }
-
 
 /**
  * An ingredient label is used inside a recipe or day block to represent
@@ -275,31 +282,36 @@ impl Recipe {
 
     pub fn from_json(value: &serde_json::Value) -> Result<Self, String> {
         if let Some(obj) = value.as_object() {
-            let aliases = obj.get("aliases")
+            let aliases = obj
+                .get("aliases")
                 .and_then(|v| v.as_array())
                 .ok_or("Missing or invalid 'aliases' field in Recipe JSON.")?
                 .iter()
                 .map(|v| v.as_str().unwrap_or("").to_string())
                 .collect();
 
-            let quantities = obj.get("quantities")
+            let quantities = obj
+                .get("quantities")
                 .and_then(|v| v.as_array())
                 .ok_or("Missing or invalid 'quantities' field in Recipe JSON.")?
                 .iter()
                 .map(Quantity::from_json)
                 .collect::<Result<Vec<Quantity>, String>>()?;
 
-            let ingredients = obj.get("ingredients")
+            let ingredients = obj
+                .get("ingredients")
                 .and_then(|v| v.as_array())
                 .ok_or("Missing or invalid 'ingredients' field in Recipe JSON.")?
                 .iter()
                 .map(|ing_val| {
                     if let Some(ing_obj) = ing_val.as_object() {
-                        let alias = ing_obj.get("alias")
+                        let alias = ing_obj
+                            .get("alias")
                             .and_then(|v| v.as_str())
                             .ok_or("Missing or invalid 'alias' field in IngredientLabel JSON.")?
                             .to_string();
-                        let quantity_field = ing_obj.get("quantity")
+                        let quantity_field = ing_obj
+                            .get("quantity")
                             .ok_or("Missing 'quantity' field in IngredientLabel JSON.")?;
                         let quantity = Quantity::from_json(quantity_field)?;
                         Ok(IngredientLabel { alias, quantity })
@@ -309,7 +321,11 @@ impl Recipe {
                 })
                 .collect::<Result<Vec<IngredientLabel>, String>>()?;
 
-            Ok(Recipe { aliases, quantities, ingredients })
+            Ok(Recipe {
+                aliases,
+                quantities,
+                ingredients,
+            })
         } else {
             Err("Expected a JSON object for Recipe.".to_string())
         }
@@ -362,28 +378,35 @@ impl Exercise {
 
     pub fn from_json(value: &serde_json::Value) -> Result<Self, String> {
         if let Some(obj) = value.as_object() {
-            let aliases = obj.get("aliases")
+            let aliases = obj
+                .get("aliases")
                 .and_then(|v| v.as_array())
                 .ok_or("Missing or invalid 'aliases' field in Exercise JSON.")?
                 .iter()
                 .map(|v| v.as_str().unwrap_or("").to_string())
                 .collect();
 
-            let quantities = obj.get("quantities")
+            let quantities = obj
+                .get("quantities")
                 .and_then(|v| v.as_array())
                 .ok_or("Missing or invalid 'quantities' field in Exercise JSON.")?
                 .iter()
                 .map(Quantity::from_json)
                 .collect::<Result<Vec<Quantity>, String>>()?;
 
-            let properties = obj.get("properties")
+            let properties = obj
+                .get("properties")
                 .and_then(|v| v.as_array())
                 .ok_or("Missing or invalid 'properties' field in Exercise JSON.")?
                 .iter()
                 .map(Property::from_json)
                 .collect::<Result<Vec<Property>, String>>()?;
 
-            Ok(Exercise { aliases, quantities, properties })
+            Ok(Exercise {
+                aliases,
+                quantities,
+                properties,
+            })
         } else {
             Err("Expected a JSON object for Exercise.".to_string())
         }

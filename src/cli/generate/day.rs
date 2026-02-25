@@ -1,6 +1,6 @@
-use crate::emitters::emitter::CanEmit;
+use crate::ast::ast::{Ate, Day, DayItem, Exercised};
 use crate::emitters::day::DayEmitter;
-use crate::ast::ast::{Day, DayItem, Ate, Exercised};
+use crate::emitters::emitter::CanEmit;
 use clap::Parser;
 
 #[derive(Parser, Debug)]
@@ -13,11 +13,23 @@ pub enum GenerateCommands {
 #[derive(Parser, Debug)]
 #[clap(about = "Generate day emitter output")]
 pub struct DayGenerateArgs {
-    #[clap(short = 'd', long = "date", help = "Date for the day entry (e.g., '2024-06-15')")]
+    #[clap(
+        short = 'd',
+        long = "date",
+        help = "Date for the day entry (e.g., '2024-06-15')"
+    )]
     pub date: String,
-    #[clap(short = 'a', long = "ate", help = "Food eaten in the format '\"chana masala\"(2 servings)'")]
+    #[clap(
+        short = 'a',
+        long = "ate",
+        help = "Food eaten in the format '\"chana masala\"(2 servings)'"
+    )]
     pub ate: Vec<String>,
-    #[clap(short = 'e', long = "exercised", help = "Exercise performed in the format '\"cycling\"(15m)'")]
+    #[clap(
+        short = 'e',
+        long = "exercised",
+        help = "Exercise performed in the format '\"cycling\"(15m)'"
+    )]
     pub exercised: Vec<String>,
 }
 

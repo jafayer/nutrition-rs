@@ -9,8 +9,8 @@ use logos::Logos;
 
 use nutrition_rs::ast::ast::Item;
 use nutrition_rs::lexer::lexer::Token;
-use nutrition_rs::parser::parser::parser;
 use nutrition_rs::nutrition_units::{NutritionQuantity, UnitRegistry, default_unit_for_property};
+use nutrition_rs::parser::parser::parser;
 
 fn lex_and_parse(input: &str) -> nutrition_rs::ast::ast::Document {
     let tokens: Vec<Token> = Token::lexer(input).filter_map(Result::ok).collect();

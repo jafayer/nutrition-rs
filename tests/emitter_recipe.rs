@@ -1,26 +1,33 @@
-use nutrition_rs::emitters::recipe::RecipeEmitter;
+use nutrition_rs::ast::ast::{IngredientLabel, Quantity, Recipe};
 use nutrition_rs::emitters::emitter::CanEmit;
-use nutrition_rs::ast::ast::{Recipe, Quantity, IngredientLabel};
+use nutrition_rs::emitters::recipe::RecipeEmitter;
 use nutrition_rs::parser::parser::parse;
 
 #[test]
 fn test_emit_recipe_with_ingredients() {
     let recipe = Recipe {
         quantities: vec![
-            Quantity { amount: 200.0, unit: Some("g".to_string()) },
-            Quantity { amount: 1.0, unit: Some("cup".to_string()) },
+            Quantity {
+                amount: 200.0,
+                unit: Some("g".to_string()),
+            },
+            Quantity {
+                amount: 1.0,
+                unit: Some("cup".to_string()),
+            },
         ],
         aliases: vec![
             "chickpeas".to_string(),
             "chickpea".to_string(),
             "garbanzo beans".to_string(),
         ],
-        ingredients: vec![
-            IngredientLabel {
-                alias: "chickpeas".to_string(),
-                quantity: Quantity { amount: 200.0, unit: Some("g".to_string()) },
-            }
-        ],
+        ingredients: vec![IngredientLabel {
+            alias: "chickpeas".to_string(),
+            quantity: Quantity {
+                amount: 200.0,
+                unit: Some("g".to_string()),
+            },
+        }],
     };
 
     let emitter = RecipeEmitter;
@@ -37,12 +44,11 @@ fn test_emit_recipe_with_ingredients() {
 #[test]
 fn test_emit_recipe_without_ingredients() {
     let recipe = Recipe {
-        quantities: vec![
-            Quantity { amount: 100.0, unit: Some("ml".to_string()) },
-        ],
-        aliases: vec![
-            "olive oil".to_string(),
-        ],
+        quantities: vec![Quantity {
+            amount: 100.0,
+            unit: Some("ml".to_string()),
+        }],
+        aliases: vec!["olive oil".to_string()],
         ingredients: vec![],
     };
 

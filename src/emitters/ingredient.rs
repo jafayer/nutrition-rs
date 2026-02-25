@@ -1,7 +1,5 @@
 use crate::ast::ast::Ingredient;
-use crate::emitters::emitter::{
-    CanEmit, format_quantity, quoted_string,
-};
+use crate::emitters::emitter::{CanEmit, format_quantity, quoted_string};
 
 #[cfg(feature = "runtime")]
 use crate::emitters::emitter::CanEmitAI;
@@ -9,8 +7,7 @@ use crate::emitters::emitter::CanEmitAI;
 use async_openai::{
     Client,
     types::chat::{
-        ChatCompletionRequestMessage,
-        ChatCompletionRequestSystemMessage,
+        ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
         ChatCompletionRequestUserMessage, CreateChatCompletionRequestArgs,
     },
 };
@@ -71,10 +68,7 @@ impl CanEmit<Ingredient> for IngredientEmitter {
 #[cfg(feature = "runtime")]
 #[async_trait]
 impl CanEmitAI<Ingredient> for IngredientEmitter {
-    async fn emit_ai(
-        &self,
-        ingredient: &Ingredient,
-    ) -> Result<Ingredient, String> {
+    async fn emit_ai(&self, ingredient: &Ingredient) -> Result<Ingredient, String> {
         let client = Client::new();
         let schema = schema_for!(Ingredient);
         let schema_json = serde_json::to_string_pretty(&schema)
@@ -103,7 +97,8 @@ impl CanEmitAI<Ingredient> for IngredientEmitter {
 
         match response.choices.first() {
             Some(choice) => match &choice.message.content {
-                Some(content) => serde_json::from_str(content).map_err(|e| format!("Failed to parse AI response: {}", e)),
+                Some(content) => serde_json::from_str(content)
+                    .map_err(|e| format!("Failed to parse AI response: {}", e)),
                 None => Err("No content in OpenAI API response".to_string()),
             },
             None => Err("No response from OpenAI API".to_string()),

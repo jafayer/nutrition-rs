@@ -1,5 +1,5 @@
 use clap::Parser;
-use nutrition_rs::cli::{run_cli, Cli};
+use nutrition_rs::cli::{Cli, run_cli};
 
 #[tokio::main]
 async fn main() {

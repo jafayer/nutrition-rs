@@ -296,7 +296,10 @@ mod tests {
     fn format_nutrition_report_contains_header_and_properties() {
         let report = NutritionReport {
             name: "chickpeas".to_string(),
-            quantity: Quantity { amount: 200.0, unit: Some("g".to_string()) },
+            quantity: Quantity {
+                amount: 200.0,
+                unit: Some("g".to_string()),
+            },
             properties: vec![
                 make_prop("calories", 538.0, Some("kcal")),
                 make_prop("protein", 29.0, Some("g")),
@@ -304,7 +307,10 @@ mod tests {
         };
         let output = format_nutrition_report(&report);
         assert!(output.contains("Nutrition Facts"), "should contain header");
-        assert!(output.contains("chickpeas"), "should contain ingredient name");
+        assert!(
+            output.contains("chickpeas"),
+            "should contain ingredient name"
+        );
         assert!(output.contains("538 kcal"), "should contain calorie value");
         assert!(output.contains("29 g"), "should contain protein value");
         // calories should appear before protein (priority ordering)
@@ -317,11 +323,17 @@ mod tests {
     fn format_nutrition_report_no_properties_shows_placeholder() {
         let report = NutritionReport {
             name: "water".to_string(),
-            quantity: Quantity { amount: 1.0, unit: Some("cup".to_string()) },
+            quantity: Quantity {
+                amount: 1.0,
+                unit: Some("cup".to_string()),
+            },
             properties: vec![],
         };
         let output = format_nutrition_report(&report);
-        assert!(output.contains("no nutritional data"), "placeholder for empty properties");
+        assert!(
+            output.contains("no nutritional data"),
+            "placeholder for empty properties"
+        );
     }
 
     #[test]
@@ -352,7 +364,10 @@ mod tests {
             net: vec![make_prop("calories", 300.0, Some("kcal"))],
         };
         let output = format_daily_report(&report);
-        assert!(!output.contains("Exercise"), "exercise section should be omitted when empty");
+        assert!(
+            !output.contains("Exercise"),
+            "exercise section should be omitted when empty"
+        );
     }
 
     #[test]
@@ -360,7 +375,10 @@ mod tests {
         // Every line in the output should have the same printed width.
         let report = NutritionReport {
             name: "test".to_string(),
-            quantity: Quantity { amount: 100.0, unit: Some("g".to_string()) },
+            quantity: Quantity {
+                amount: 100.0,
+                unit: Some("g".to_string()),
+            },
             properties: vec![
                 make_prop("calories", 100.0, Some("kcal")),
                 make_prop("protein", 5.5, Some("g")),
@@ -370,7 +388,11 @@ mod tests {
         let widths: Vec<usize> = output.lines().map(|l| l.chars().count()).collect();
         let first = widths[0];
         for (i, &w) in widths.iter().enumerate() {
-            assert_eq!(w, first, "line {} has width {} but expected {}", i, w, first);
+            assert_eq!(
+                w, first,
+                "line {} has width {} but expected {}",
+                i, w, first
+            );
         }
     }
 }

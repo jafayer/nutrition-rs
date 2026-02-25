@@ -1,9 +1,9 @@
-pub mod recipe;
-pub mod ingredient;
 pub mod day;
-use crate::cli::generate::recipe::RecipeGenerateArgs;
-use crate::cli::generate::ingredient::IngredientGenerateArgs;
+pub mod ingredient;
+pub mod recipe;
 use crate::cli::generate::day::DayGenerateArgs;
+use crate::cli::generate::ingredient::IngredientGenerateArgs;
+use crate::cli::generate::recipe::RecipeGenerateArgs;
 use clap::Parser;
 
 #[derive(Parser, Debug)]

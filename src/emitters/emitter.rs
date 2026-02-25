@@ -3,7 +3,6 @@ use crate::ast::ast::Quantity;
 #[cfg(feature = "runtime")]
 use async_trait::async_trait;
 
-
 pub trait CanEmit<T> {
     fn emit(&self, item: &T) -> String;
 }

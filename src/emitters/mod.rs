@@ -1,4 +1,4 @@
-pub mod recipe;
+pub mod day;
 pub mod emitter;
 pub mod ingredient;
-pub mod day;
+pub mod recipe;

@@ -3,8 +3,8 @@ use std::fs;
 
 #[test]
 fn test_parse_example_file() {
-    let source = fs::read_to_string("examples/test.nutrition")
-        .expect("Failed to read test.nutrition file");
+    let source =
+        fs::read_to_string("examples/test.nutrition").expect("Failed to read test.nutrition file");
 
     let doc = parse(&source).expect("Failed to parse test.nutrition");
     assert!(!doc.items.is_empty(), "Parsed document should not be empty");
@@ -46,7 +46,10 @@ fn test_parse_ingredient_with_comments() {
 }"#;
 
     let doc = parse(source).expect("Failed to parse ingredient with comments");
-    assert!(!doc.items.is_empty(), "Ingredient with comments should parse");
+    assert!(
+        !doc.items.is_empty(),
+        "Ingredient with comments should parse"
+    );
 }
 
 #[test]

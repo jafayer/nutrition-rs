@@ -74,7 +74,8 @@ impl SemanticAnalyzer {
         let mut totals: HashMap<String, f64> = HashMap::new();
 
         for ingredient_ref in &recipe.ingredients {
-            let ingredient = self.get_ingredient(&ingredient_ref.alias)
+            let ingredient = self
+                .get_ingredient(&ingredient_ref.alias)
                 .ok_or_else(|| format!("Unknown ingredient: {}", ingredient_ref.alias))?;
 
             let scale = if !ingredient.quantities.is_empty() {

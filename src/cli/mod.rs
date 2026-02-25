@@ -57,7 +57,11 @@ pub enum Commands {
 
     /// Display nutritional data for a named ingredient or recipe.
     Query {
-        #[arg(short, long, help = "Name or alias of the ingredient or recipe to query")]
+        #[arg(
+            short,
+            long,
+            help = "Name or alias of the ingredient or recipe to query"
+        )]
         name: String,
 
         #[arg(
@@ -100,7 +104,7 @@ pub enum Commands {
 
         #[arg(long, help = "Output raw JSON instead of the nutrition-label display")]
         json: bool,
-    }
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -126,9 +130,7 @@ pub fn print_document(node: crate::ast::ast::Document) {
 /// Return a declaration-specific help message for ariadne's `with_help`.
 pub fn help_for_kind(kind: &str) -> &'static str {
     match kind {
-        "@day" => {
-            "@day blocks may only contain `@ate`, `@exercised`, and `[MealLabel]` entries"
-        }
+        "@day" => "@day blocks may only contain `@ate`, `@exercised`, and `[MealLabel]` entries",
         "@ingredient" | "@food" => {
             "ingredients must have at least one quantity, one alias, and a `{ property: value }` body"
         }
@@ -181,10 +183,10 @@ pub fn current_date_iso8601() -> String {
 /// require an async runtime.
 #[cfg(feature = "runtime")]
 pub async fn run_cli(cli: Cli) {
-    use ariadne::{Color, Label, Report, ReportKind, Source};
     use crate::ast::ast::Quantity;
     use crate::display::{format_aggregated_report, format_daily_report, format_nutrition_report};
-    use crate::nutrition::{aggregate_reports, compute_report, query_nutrition, NutritionReport};
+    use crate::nutrition::{NutritionReport, aggregate_reports, compute_report, query_nutrition};
+    use ariadne::{Color, Label, Report, ReportKind, Source};
 
     match cli.command {
         Commands::Validate { show_tree } => {
@@ -211,9 +213,7 @@ pub async fn run_cli(cli: Cli) {
                                 .with_color(Color::Red),
                         );
 
-                if let (Some(note_span), Some(note_msg)) =
-                    (&diag.note_span, &diag.note_message)
-                {
+                if let (Some(note_span), Some(note_msg)) = (&diag.note_span, &diag.note_message) {
                     report = report.with_label(
                         Label::new((file.as_str(), note_span.clone()))
                             .with_message(note_msg)
@@ -233,9 +233,7 @@ pub async fn run_cli(cli: Cli) {
                     let item_count = doc
                         .items
                         .iter()
-                        .filter(|i| {
-                            !matches!(i, crate::ast::ast::Item::Comment(_))
-                        })
+                        .filter(|i| !matches!(i, crate::ast::ast::Item::Comment(_)))
                         .count();
                     println!("✓ '{}' is valid ({} item(s)).", file, item_count);
                     if show_tree {
@@ -246,9 +244,7 @@ pub async fn run_cli(cli: Cli) {
                     let recovered = doc
                         .items
                         .iter()
-                        .filter(|i| {
-                            !matches!(i, crate::ast::ast::Item::Comment(_))
-                        })
+                        .filter(|i| !matches!(i, crate::ast::ast::Item::Comment(_)))
                         .count();
                     eprintln!(
                         "✗ '{}' has {} parse error(s); {} item(s) recovered.",
@@ -289,7 +285,11 @@ pub async fn run_cli(cli: Cli) {
             crate::web_server::handler::run_server(port).await.unwrap();
         }
 
-        Commands::Query { name, quantity, json } => {
+        Commands::Query {
+            name,
+            quantity,
+            json,
+        } => {
             let file = require_file(&cli.file);
             let document = match file_loader::load_tree(Some(&file)) {
                 Ok(doc) => doc,
@@ -304,7 +304,11 @@ pub async fn run_cli(cli: Cli) {
                 .map(|q| Quantity::from_string(q))
                 .transpose()
                 .unwrap_or_else(|err| {
-                    eprintln!("Invalid quantity '{}': {}", quantity.as_deref().unwrap_or(""), err);
+                    eprintln!(
+                        "Invalid quantity '{}': {}",
+                        quantity.as_deref().unwrap_or(""),
+                        err
+                    );
                     std::process::exit(1);
                 });
 
@@ -323,7 +327,13 @@ pub async fn run_cli(cli: Cli) {
             }
         }
 
-        Commands::Report { start, end, ate_only, no_aggregate, json } => {
+        Commands::Report {
+            start,
+            end,
+            ate_only,
+            no_aggregate,
+            json,
+        } => {
             let file = require_file(&cli.file);
             let document = match file_loader::load_tree(Some(&file)) {
                 Ok(doc) => doc,
@@ -363,7 +373,10 @@ pub async fn run_cli(cli: Cli) {
                             "days": agg.days,
                             "intake": agg.intake,
                         });
-                        println!("{}", serde_json::to_string_pretty(&output).unwrap_or_default());
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&output).unwrap_or_default()
+                        );
                     } else {
                         println!("{}", agg.to_json());
                     }
@@ -371,7 +384,10 @@ pub async fn run_cli(cli: Cli) {
                     let label = format!("{} \u{2013} {}", agg.start, agg.end);
                     let intake_report = NutritionReport {
                         name: label,
-                        quantity: Quantity { amount: agg.days as f64, unit: Some("days".to_string()) },
+                        quantity: Quantity {
+                            amount: agg.days as f64,
+                            unit: Some("days".to_string()),
+                        },
                         properties: agg.intake,
                     };
                     println!("{}", format_nutrition_report(&intake_report));
@@ -386,14 +402,20 @@ pub async fn run_cli(cli: Cli) {
                                 "date": report.date,
                                 "intake": report.intake,
                             });
-                            println!("{}", serde_json::to_string_pretty(&output).unwrap_or_default());
+                            println!(
+                                "{}",
+                                serde_json::to_string_pretty(&output).unwrap_or_default()
+                            );
                         } else {
                             println!("{}", report.to_json());
                         }
                     } else if ate_only {
                         let intake_report = NutritionReport {
                             name: report.date.clone(),
-                            quantity: Quantity { amount: 1.0, unit: Some("day".to_string()) },
+                            quantity: Quantity {
+                                amount: 1.0,
+                                unit: Some("day".to_string()),
+                            },
                             properties: report.intake.clone(),
                         };
                         println!("{}", format_nutrition_report(&intake_report));

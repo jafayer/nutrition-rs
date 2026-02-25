@@ -50,14 +50,21 @@ pub enum Token {
     #[token("@exercised")]
     AtExercised,
 
-     // Punctuation
-    #[token("{")] LBrace,
-    #[token("}")] RBrace,
-    #[token("(")] LParen,
-    #[token(")")] RParen,
-    #[token(":")] Colon,
-    #[token(",")] Comma,
-    #[token("=")] Equals,
+    // Punctuation
+    #[token("{")]
+    LBrace,
+    #[token("}")]
+    RBrace,
+    #[token("(")]
+    LParen,
+    #[token(")")]
+    RParen,
+    #[token(":")]
+    Colon,
+    #[token(",")]
+    Comma,
+    #[token("=")]
+    Equals,
 
     // Literals
     #[regex(r#""([^"\\]|\\.)*""#, |lex| unescape_string_literal(&lex.slice()[1..lex.slice().len()-1]))]
