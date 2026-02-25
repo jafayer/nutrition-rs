@@ -1,8 +1,10 @@
 pub mod env;
 pub mod file_loader;
 pub mod generate;
+pub mod validate;
 
 use clap::Parser;
+use chrono::Local;
 
 pub use env::DEFAULT_FILE_ENV_VAR;
 
@@ -123,53 +125,9 @@ pub fn print_document(node: crate::ast::ast::Document) {
     println!("{:#?}", node);
 }
 
-/// Return a declaration-specific help message for ariadne's `with_help`.
-pub fn help_for_kind(kind: &str) -> &'static str {
-    match kind {
-        "@day" => {
-            "@day blocks may only contain `@ate`, `@exercised`, and `[MealLabel]` entries"
-        }
-        "@ingredient" | "@food" => {
-            "ingredients must have at least one quantity, one alias, and a `{ property: value }` body"
-        }
-        "@recipe" => {
-            "recipes must have at least one quantity, one alias, and a body with `\"alias\"(quantity)` entries"
-        }
-        "@exercise" => {
-            "exercises must have at least one quantity, one alias, and a `{ property: value }` body"
-        }
-        _ => "check that all required fields are present and the block is closed with `}`",
-    }
-}
-
-/// Return the current UTC date as a `YYYY-MM-DD` string using only the
-/// standard library (no external date crates required).
-///
-/// Note: this uses UTC time, so the date may differ from the local wall-clock
-/// date near midnight depending on the system's timezone offset.
+/// Return the current local date as a `YYYY-MM-DD` string.
 pub fn current_date_iso8601() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-
-    // Days since epoch.
-    let days = secs / 86400;
-
-    // Algorithm from http://howardhinnant.github.io/date_algorithms.html#civil_from_days
-    let z = days as i64 + 719468;
-    let era = if z >= 0 { z } else { z - 146096 } / 146097;
-    let doe = z - era * 146097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-
-    format!("{:04}-{:02}-{:02}", y, m, d)
+    Local::now().format("%Y-%m-%d").to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -181,7 +139,6 @@ pub fn current_date_iso8601() -> String {
 /// require an async runtime.
 #[cfg(feature = "runtime")]
 pub async fn run_cli(cli: Cli) {
-    use ariadne::{Color, Label, Report, ReportKind, Source};
     use crate::ast::ast::Quantity;
     use crate::display::{format_aggregated_report, format_daily_report, format_nutrition_report};
     use crate::nutrition::{aggregate_reports, compute_report, query_nutrition, NutritionReport};
@@ -189,82 +146,8 @@ pub async fn run_cli(cli: Cli) {
     match cli.command {
         Commands::Validate { show_tree } => {
             let file = require_file(&cli.file);
-            let (source, document, diagnostics) =
-                match file_loader::load_source_with_diagnostics(&file) {
-                    Ok(result) => result,
-                    Err(e) => {
-                        eprintln!("error: {}", e);
-                        std::process::exit(1);
-                    }
-                };
-
-            for diag in &diagnostics {
-                let mut report =
-                    Report::build(ReportKind::Error, file.as_str(), diag.byte_span.start)
-                        .with_message(&diag.message)
-                        .with_label(
-                            Label::new((file.as_str(), diag.byte_span.clone()))
-                                .with_message(format!(
-                                    "this {} could not be parsed",
-                                    diag.declaration_kind
-                                ))
-                                .with_color(Color::Red),
-                        );
-
-                if let (Some(note_span), Some(note_msg)) =
-                    (&diag.note_span, &diag.note_message)
-                {
-                    report = report.with_label(
-                        Label::new((file.as_str(), note_span.clone()))
-                            .with_message(note_msg)
-                            .with_color(Color::Yellow),
-                    );
-                }
-
-                report
-                    .with_help(help_for_kind(diag.declaration_kind))
-                    .finish()
-                    .eprint((file.as_str(), Source::from(&source)))
-                    .unwrap();
-            }
-
-            match document {
-                Some(doc) if diagnostics.is_empty() => {
-                    let item_count = doc
-                        .items
-                        .iter()
-                        .filter(|i| {
-                            !matches!(i, crate::ast::ast::Item::Comment(_))
-                        })
-                        .count();
-                    println!("✓ '{}' is valid ({} item(s)).", file, item_count);
-                    if show_tree {
-                        print_document(doc);
-                    }
-                }
-                Some(doc) => {
-                    let recovered = doc
-                        .items
-                        .iter()
-                        .filter(|i| {
-                            !matches!(i, crate::ast::ast::Item::Comment(_))
-                        })
-                        .count();
-                    eprintln!(
-                        "✗ '{}' has {} parse error(s); {} item(s) recovered.",
-                        file,
-                        diagnostics.len(),
-                        recovered,
-                    );
-                    if show_tree {
-                        print_document(doc);
-                    }
-                    std::process::exit(1);
-                }
-                None => {
-                    eprintln!("✗ '{}' could not be parsed.", file);
-                    std::process::exit(1);
-                }
+            if let Err(code) = validate::run_validate(&file, show_tree) {
+                std::process::exit(code);
             }
         }
 

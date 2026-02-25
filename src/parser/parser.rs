@@ -21,6 +21,14 @@ fn block_separator<'a>() -> impl Parser<'a, &'a [Token], ()> + Clone {
         .ignored()
 }
 
+// Between header fields (e.g. alias strings), allow newlines and inline comments.
+fn skip_header_ws<'a>() -> impl Parser<'a, &'a [Token], ()> + Clone {
+    any()
+        .filter(|tok| matches!(tok, Token::Newline | Token::Comment(_)))
+        .repeated()
+        .ignored()
+}
+
 
 fn parse_number<'a>() -> impl Parser<'a, &'a [Token], f64> + Clone {
     select! { Token::Number(n) => n }
@@ -62,16 +70,29 @@ fn parse_property<'a>() -> impl Parser<'a, &'a [Token], Property> + Clone {
         .map(|(name, value)| Property { name, value })
 }
 
+fn parse_aliases<'a>() -> impl Parser<'a, &'a [Token], Vec<String>> + Clone {
+    skip_header_ws()
+        .ignore_then(parse_string())
+        .then(
+            skip_header_ws()
+                .ignore_then(parse_string())
+                .repeated()
+                .collect::<Vec<String>>(),
+        )
+        .then_ignore(skip_header_ws())
+        .map(|(first, rest)| {
+            let mut aliases = Vec::with_capacity(rest.len() + 1);
+            aliases.push(first);
+            aliases.extend(rest);
+            aliases
+        })
+}
+
 fn parse_ingredient_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
     just(Token::AtIngredient)
         .or(just(Token::AtFood))
         .ignore_then(parse_quantities_in_parens())
-        .then(
-            parse_string()
-                .repeated()
-                .at_least(1)
-                .collect()
-        )
+        .then(parse_aliases())
         .then(
             just(Token::LBrace)
                 .ignore_then(skip_block_ws())
@@ -108,12 +129,7 @@ fn parse_ingredient_label<'a>() -> impl Parser<'a, &'a [Token], IngredientLabel>
 fn parse_recipe_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
     just(Token::AtRecipe)
         .ignore_then(parse_quantities_in_parens())
-        .then(
-            parse_string()
-                .repeated()
-                .at_least(1)
-                .collect()
-        )
+        .then(parse_aliases())
         .then(
             just(Token::LBrace)
                 .ignore_then(skip_block_ws())
@@ -190,12 +206,7 @@ fn parse_day_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
 fn parse_exercise_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
     just(Token::AtExercise)
         .ignore_then(parse_quantities_in_parens())
-        .then(
-            parse_string()
-                .repeated()
-                .at_least(1)
-                .collect()
-        )
+        .then(parse_aliases())
         .then(
             just(Token::LBrace)
                 .ignore_then(skip_block_ws())
@@ -231,8 +242,19 @@ fn parse_comment<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
     select! { Token::Comment(c) => Item::Comment(c) }
 }
 
+fn parse_import_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
+    just(Token::ImportDirective)
+        .ignore_then(parse_string())
+        .then(
+            select! { Token::Comment(_) => () }
+                .or_not()
+        )
+        .map(|(path, _)| Item::Import(path))
+}
+
 fn parse_item<'a>() -> impl Parser<'a, &'a [Token], Item> + Clone {
-    parse_ingredient_item()
+    parse_import_item()
+        .or(parse_ingredient_item())
         .or(parse_recipe_item())
         .or(parse_exercise_item())
         .or(parse_day_item())
@@ -301,6 +323,7 @@ pub fn parse_reader<R: BufRead>(reader: R) -> Option<Document> {
 /// Returns the human-readable name of the declaration that starts with `tok`.
 fn declaration_name(tok: &Token) -> &'static str {
     match tok {
+        Token::ImportDirective => "!import",
         Token::AtIngredient | Token::AtFood => "@ingredient",
         Token::AtRecipe => "@recipe",
         Token::AtExercise => "@exercise",
@@ -316,7 +339,8 @@ fn declaration_name(tok: &Token) -> &'static str {
 fn is_top_level_start(tok: &Token) -> bool {
     matches!(
         tok,
-        Token::AtIngredient
+        Token::ImportDirective
+            | Token::AtIngredient
             | Token::AtFood
             | Token::AtRecipe
             | Token::AtExercise
@@ -343,6 +367,7 @@ fn token_line_map(tokens: &[Token]) -> Vec<usize> {
 /// Split a flat token slice into per-declaration chunks.
 ///
 /// Splitting rules:
+/// * `!import` starts a new chunk at top level.
 /// * `@ingredient`, `@food`, `@recipe`, `@exercise`, `@day` **always** start a
 ///   new chunk, even when the brace depth is > 0.  These keywords cannot
 ///   legitimately appear inside a `{…}` block, so seeing one at depth > 0
@@ -377,7 +402,8 @@ fn split_chunks(tokens: &[Token]) -> Vec<(usize, usize)> {
             | Token::AtFood
             | Token::AtRecipe
             | Token::AtExercise
-            | Token::AtDay => {
+            | Token::AtDay
+            | Token::ImportDirective => {
                 if let Some(start) = chunk_start {
                     chunks.push((start, i));
                 }

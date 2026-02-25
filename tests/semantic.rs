@@ -245,6 +245,20 @@ fn test_multiple_aliases_resolution() {
 }
 
 #[test]
+fn test_semantic_analyzer_case_insensitive_alias_lookup() {
+        let source = r#"@ingredient(100g) "ChickPeas" {
+    calories: 269
+}"#;
+
+        let mut analyzer = SemanticAnalyzer::new();
+        let doc = parse(source).expect("Failed to parse source");
+        let _ = analyzer.analyze(doc).expect("Failed to analyze source");
+
+        assert!(analyzer.get_ingredient("chickpeas").is_some());
+        assert!(analyzer.get_ingredient("CHICKPEAS").is_some());
+}
+
+#[test]
 fn test_recipe_with_ingredient_labels() {
     let doc = Document {
         items: vec![Item::Recipe(Recipe {

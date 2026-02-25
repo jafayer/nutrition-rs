@@ -243,6 +243,14 @@ fn query_nutrition_unknown_alias_returns_error() {
     assert!(query_nutrition(&doc, "nope", None).is_err());
 }
 
+#[test]
+fn query_nutrition_matches_alias_case_insensitively() {
+    let ing = make_ingredient("ChickPeas", 100.0, "g", vec![("calories", 269.0, Some("kcal"))]);
+    let doc = make_document(vec![Item::Ingredient(ing)]);
+    let report = query_nutrition(&doc, "chickpeas", None).unwrap();
+    assert_eq!(report.name, "ChickPeas");
+}
+
 // ---------------------------------------------------------------------------
 // Daily report computation
 // ---------------------------------------------------------------------------
@@ -393,6 +401,34 @@ fn daily_report_unknown_food_skipped_gracefully() {
     let report = compute_daily_report(&doc, &day);
     assert!(report.intake.is_empty());
     assert!(report.exercise.is_empty());
+}
+
+#[test]
+fn daily_report_resolves_ate_and_exercised_case_insensitively() {
+    let ing = make_ingredient("Rice", 100.0, "g", vec![("calories", 130.0, Some("kcal"))]);
+    let ex = make_exercise("Running", 30.0, "min", vec![("calories", 200.0, Some("kcal"))]);
+    let day = Day {
+        date: "2026-06-01".to_string(),
+        items: vec![
+            DayItem::Ate(Ate {
+                food_alias: "rIcE".to_string(),
+                quantity: Quantity { amount: 100.0, unit: Some("g".to_string()) },
+            }),
+            DayItem::Exercised(Exercised {
+                exercise_alias: "RUNNING".to_string(),
+                quantity: Quantity { amount: 30.0, unit: Some("min".to_string()) },
+            }),
+        ],
+    };
+
+    let doc = make_document(vec![Item::Ingredient(ing), Item::Exercise(ex), Item::Day(day.clone())]);
+    let report = compute_daily_report(&doc, &day);
+
+    let intake_cal = report.intake.iter().find(|p| p.name == "calories").unwrap();
+    assert!((intake_cal.value.amount - 130.0).abs() < 1e-6);
+
+    let ex_cal = report.exercise.iter().find(|p| p.name == "calories").unwrap();
+    assert!((ex_cal.value.amount - 200.0).abs() < 1e-6);
 }
 
 // ---------------------------------------------------------------------------

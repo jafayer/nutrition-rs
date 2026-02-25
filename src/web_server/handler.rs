@@ -12,6 +12,7 @@ use std::net::SocketAddr;
 
 pub async fn to_item(Json(item): Json<Item>) -> impl IntoResponse {
     let output = match item {
+        Item::Import(path) => format!("!import \"{}\"", path),
         Item::Property(prop) => prop.to_string(),
         Item::Ingredient(ingredient) => ingredient.to_string(),
         Item::Recipe(recipe) => recipe.to_string(),

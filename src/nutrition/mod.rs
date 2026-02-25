@@ -9,6 +9,10 @@ use crate::nutrition_units::{default_unit_for_property, NutritionQuantity, UnitR
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+fn normalize_label(label: &str) -> String {
+    label.trim().to_lowercase()
+}
+
 // ---------------------------------------------------------------------------
 // NutritionReport
 // ---------------------------------------------------------------------------
@@ -287,7 +291,7 @@ pub fn compute_recipe_nutrition(
     for item in &document.items {
         if let Item::Ingredient(ing) = item {
             for alias in &ing.aliases {
-                ingredients.insert(alias.clone(), ing);
+                ingredients.insert(normalize_label(alias), ing);
             }
         }
     }
@@ -302,8 +306,9 @@ pub fn compute_recipe_nutrition(
     let mut all_properties: Vec<Vec<Property>> = Vec::new();
 
     for ing_label in &recipe.ingredients {
+        let label_key = normalize_label(&ing_label.alias);
         let ingredient = ingredients
-            .get(&ing_label.alias)
+            .get(&label_key)
             .ok_or_else(|| format!("Unknown ingredient: '{}'", ing_label.alias))?;
 
         // Scale factor = (label quantity / ingredient base quantity) * recipe scale
@@ -345,10 +350,12 @@ pub fn query_nutrition(
     alias: &str,
     requested_quantity: Option<&Quantity>,
 ) -> Result<NutritionReport, String> {
+    let alias_key = normalize_label(alias);
+
     // Try ingredients first.
     for item in &document.items {
         if let Item::Ingredient(ing) = item {
-            if ing.aliases.iter().any(|a| a == alias) {
+            if ing.aliases.iter().any(|a| normalize_label(a) == alias_key) {
                 return Ok(compute_ingredient_nutrition(ing, requested_quantity));
             }
         }
@@ -357,7 +364,7 @@ pub fn query_nutrition(
     // Then try recipes.
     for item in &document.items {
         if let Item::Recipe(recipe) = item {
-            if recipe.aliases.iter().any(|a| a == alias) {
+            if recipe.aliases.iter().any(|a| normalize_label(a) == alias_key) {
                 return compute_recipe_nutrition(document, recipe, requested_quantity);
             }
         }
@@ -394,17 +401,17 @@ pub fn compute_daily_report(document: &Document, day: &Day) -> DailyNutritionRep
         match item {
             Item::Ingredient(ing) => {
                 for alias in &ing.aliases {
-                    ingredients.insert(alias.clone(), ing);
+                    ingredients.insert(normalize_label(alias), ing);
                 }
             }
             Item::Recipe(rec) => {
                 for alias in &rec.aliases {
-                    recipes.insert(alias.clone(), rec);
+                    recipes.insert(normalize_label(alias), rec);
                 }
             }
             Item::Exercise(ex) => {
                 for alias in &ex.aliases {
-                    exercises.insert(alias.clone(), ex);
+                    exercises.insert(normalize_label(alias), ex);
                 }
             }
             _ => {}
@@ -418,10 +425,11 @@ pub fn compute_daily_report(document: &Document, day: &Day) -> DailyNutritionRep
     for day_item in &day.items {
         match day_item {
             DayItem::Ate(ate) => {
-                if let Some(ing) = ingredients.get(&ate.food_alias) {
+                let alias_key = normalize_label(&ate.food_alias);
+                if let Some(ing) = ingredients.get(&alias_key) {
                     let report = compute_ingredient_nutrition(ing, Some(&ate.quantity));
                     intake_all.push(report.properties);
-                } else if let Some(rec) = recipes.get(&ate.food_alias) {
+                } else if let Some(rec) = recipes.get(&alias_key) {
                     if let Ok(report) = compute_recipe_nutrition(document, rec, Some(&ate.quantity)) {
                         intake_all.push(report.properties);
                     }
@@ -429,7 +437,8 @@ pub fn compute_daily_report(document: &Document, day: &Day) -> DailyNutritionRep
                 // Unrecognised alias: skip gracefully.
             }
             DayItem::Exercised(exercised) => {
-                if let Some(ex) = exercises.get(&exercised.exercise_alias) {
+                let alias_key = normalize_label(&exercised.exercise_alias);
+                if let Some(ex) = exercises.get(&alias_key) {
                     let props = compute_exercise_nutrition(ex, Some(&exercised.quantity));
                     exercise_all.push(props);
                 }

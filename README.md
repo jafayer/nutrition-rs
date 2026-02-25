@@ -15,6 +15,7 @@ A plain-text nutrition tracking tool built around the **Nutrition language** —
 
 - [The Nutrition Language](#the-nutrition-language)
   - [File Format](#file-format)
+  - [Imports](#imports)
   - [Comments](#comments)
   - [Quantities](#quantities)
   - [Properties](#properties)
@@ -67,6 +68,19 @@ A `.nutrition` file is a plain-text document consisting of top-level declaration
   @ate "oatmeal"(1)
 }
 ```
+
+### Imports
+
+Use `!import` to include declarations from another `.nutrition` file.
+
+```nutrition
+!import "./shared_ingredients.nutrition"
+```
+
+- The import path must be a quoted string.
+- You can add an inline comment after the import line.
+- Imports are parsed as first-class top-level items, so files that begin with `!import` parse correctly.
+- CLI commands load imported files recursively (with cycle detection), so queries/reports can resolve declarations across imported files.
 
 ### Comments
 
@@ -124,6 +138,7 @@ Defines a food ingredient with one or more quantity equivalencies, one or more n
 
 - **Quantities** — one or more `(<quantity>)` groups defining the base serving size and optional alternate measurements (e.g. a weight and a volume). The first quantity is the canonical base.
 - **Aliases** — one or more quoted strings. Any alias can be used when referencing the ingredient in a recipe or day log.
+- **Alias layout** — aliases may appear on the same line as `@ingredient` or be newline-delimited across multiple lines before the `{` block.
 - **Properties** — nutritional facts per the base serving size. The block may be empty (`{}`).
 
 **Examples:**
@@ -136,6 +151,18 @@ Defines a food ingredient with one or more quantity equivalencies, one or more n
 
 // Multiple serving sizes (100g = 1 cup for this ingredient)
 @ingredient(100g)(1 cup) "chickpeas" "chickpea" "garbanzo beans" {
+  calories: 269
+  protein: 14.5g
+  fat: 4g
+  carbohydrates: 45g
+  fiber: 12.5g
+}
+
+// Equivalent newline-delimited alias form
+@ingredient(100g)(1 cup)
+"chickpeas"
+"chickpea"
+"garbanzo beans" {
   calories: 269
   protein: 14.5g
   fat: 4g
@@ -160,6 +187,7 @@ Defines a recipe as a combination of ingredients and specifies how many servings
 
 - **Yield quantities** — how much the recipe makes (e.g. `(4)` for 4 servings, `(500g)` for 500 g total). Multiple quantities define alternate yield representations.
 - **Aliases** — quoted name(s) for the recipe.
+- **Alias layout** — aliases may be inline or newline-delimited before the `{` block.
 - **Ingredient list** — each line is `"<alias>"(<quantity>)`, referencing any alias of an `@ingredient` or another `@recipe`. Entries can optionally be comma-separated.
 
 **Examples:**
@@ -197,6 +225,8 @@ Defines an exercise with a canonical duration/quantity and the calories (or othe
   calories: 300kcal
 }
 ```
+
+Exercise aliases follow the same rule as ingredients/recipes: one or more quoted aliases may be inline or newline-delimited before the `{` block.
 
 When referenced in a `@day` block via `@exercised`, the quantity is scaled to match the duration logged.
 
@@ -500,8 +530,11 @@ The VS Code extension provides first-class editing support for `.nutrition` file
 | **Syntax highlighting** | Color-codes `@` keywords, strings, numbers, properties, and comments |
 | **Semantic highlighting** | Token-level highlighting using tree-sitter for `@ingredient`, `@recipe`, `@exercise`, `@day`, `@ate`, `@exercised`, and more |
 | **Find commands** | Quick-pick navigation to any ingredient, recipe, food, or day in the file (`Ctrl+Shift+P` → `Nutrition: Find …`) |
+| **Import-aware navigation** | `Find` commands traverse `!import` chains and include declarations from imported `.nutrition` files |
 | **Today command** | Jump to — or scaffold — today's `@day` entry (`Ctrl+Shift+P` → `Nutrition: Today`) |
 | **Document formatting** | Auto-indentation and consistent block spacing (`Shift+Alt+F`) |
+
+`Find Ingredient`, `Find Food`, and `Find Recipe` support both inline aliases and newline-delimited alias headers.
 
 ### Installation
 

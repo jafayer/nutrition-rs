@@ -6,6 +6,9 @@
       "include": "#comments"
     },
     {
+      "include": "#import-directive"
+    },
+    {
       "include": "#declarations"
     },
     {
@@ -50,6 +53,22 @@
         }
       ]
     },
+    "import-directive": {
+      "patterns": [
+        {
+          "name": "meta.import.nutrition",
+          "match": "^(\\s*)(!import)\\s+(\"(?:[^\"\\\\]|\\\\.)*\")\\s*(?://.*)?$",
+          "captures": {
+            "2": {
+              "name": "keyword.control.import.nutrition"
+            },
+            "3": {
+              "name": "string.quoted.double.nutrition"
+            }
+          }
+        }
+      ]
+    },
     "keywords": {
       "patterns": [
         {
@@ -59,13 +78,10 @@
       ]
     },
     "strings": {
-      "name": "string.quoted.double.nutrition",
-      "begin": "\"",
-      "end": "\"",
       "patterns": [
         {
-          "name": "constant.character.escape.nutrition",
-          "match": "\\\\."
+          "name": "string.quoted.double.nutrition",
+          "match": "\"(?:[^\"\\\\]|\\\\.)*\""
         }
       ]
     },

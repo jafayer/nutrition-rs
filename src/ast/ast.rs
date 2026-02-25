@@ -8,6 +8,7 @@ pub struct Document {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Item {
+    Import(String),
     Property(Property),
     Ingredient(Ingredient),
     // Food(Food),
