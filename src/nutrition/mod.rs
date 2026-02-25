@@ -52,6 +52,45 @@ pub struct DailyNutritionReport {
     pub net: Vec<Property>,
 }
 
+/// A traced contribution node for `report --trace` output.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct NutritionTraceNode {
+    /// The original alias text used in the source declaration.
+    pub alias: String,
+    /// The declaration kind this alias resolved to (`ingredient`, `recipe`, `exercise`, or `unresolved`).
+    pub kind: String,
+    /// The quantity used at this node.
+    pub quantity: Quantity,
+    /// Nutritional properties contributed by this node.
+    pub properties: Vec<Property>,
+    /// Child contributions (e.g. recipe ingredients).
+    pub children: Vec<NutritionTraceNode>,
+}
+
+/// A daily report with contribution tracing for each `@ate` / `@exercised` entry.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DailyNutritionTraceReport {
+    /// The date this trace report covers.
+    pub date: String,
+    /// Traced intake entries in source order.
+    pub intake_entries: Vec<NutritionTraceNode>,
+    /// Traced exercise entries in source order.
+    pub exercise_entries: Vec<NutritionTraceNode>,
+    /// Total intake properties.
+    pub intake: Vec<Property>,
+    /// Total exercise properties.
+    pub exercise: Vec<Property>,
+    /// Net properties: intake minus exercise.
+    pub net: Vec<Property>,
+}
+
+impl DailyNutritionTraceReport {
+    /// Serialize this trace report to a pretty-printed JSON string.
+    pub fn to_json(&self) -> String {
+        serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".to_string())
+    }
+}
+
 impl DailyNutritionReport {
     /// Serialize this report to a pretty-printed JSON string.
     pub fn to_json(&self) -> String {
@@ -460,6 +499,173 @@ pub fn compute_daily_report(document: &Document, day: &Day) -> DailyNutritionRep
         exercise,
         net,
     }
+}
+
+/// Compute a daily nutrition trace report, showing where each nutritional
+/// contribution originates.
+pub fn compute_daily_trace_report(document: &Document, day: &Day) -> DailyNutritionTraceReport {
+    let mut ingredients: HashMap<String, &Ingredient> = HashMap::new();
+    let mut recipes: HashMap<String, &Recipe> = HashMap::new();
+    let mut exercises: HashMap<String, &Exercise> = HashMap::new();
+
+    for item in &document.items {
+        match item {
+            Item::Ingredient(ing) => {
+                for alias in &ing.aliases {
+                    ingredients.insert(normalize_label(alias), ing);
+                }
+            }
+            Item::Recipe(rec) => {
+                for alias in &rec.aliases {
+                    recipes.insert(normalize_label(alias), rec);
+                }
+            }
+            Item::Exercise(ex) => {
+                for alias in &ex.aliases {
+                    exercises.insert(normalize_label(alias), ex);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut intake_entries: Vec<NutritionTraceNode> = Vec::new();
+    let mut exercise_entries: Vec<NutritionTraceNode> = Vec::new();
+    let mut intake_all: Vec<Vec<Property>> = Vec::new();
+    let mut exercise_all: Vec<Vec<Property>> = Vec::new();
+
+    for day_item in &day.items {
+        match day_item {
+            DayItem::Ate(ate) => {
+                let alias_key = normalize_label(&ate.food_alias);
+
+                if let Some(ing) = ingredients.get(&alias_key) {
+                    let report = compute_ingredient_nutrition(ing, Some(&ate.quantity));
+                    intake_all.push(report.properties.clone());
+                    intake_entries.push(NutritionTraceNode {
+                        alias: ate.food_alias.clone(),
+                        kind: "ingredient".to_string(),
+                        quantity: ate.quantity.clone(),
+                        properties: report.properties,
+                        children: vec![],
+                    });
+                } else if let Some(recipe) = recipes.get(&alias_key) {
+                    let recipe_scale = compute_scale(&recipe.quantities, &ate.quantity);
+                    let mut children = Vec::new();
+                    let mut child_props = Vec::new();
+
+                    for ing_label in &recipe.ingredients {
+                        let ing_key = normalize_label(&ing_label.alias);
+                        if let Some(ingredient) = ingredients.get(&ing_key) {
+                            let ing_scale = if ingredient.quantities.is_empty() {
+                                ing_label.quantity.amount * recipe_scale
+                            } else {
+                                compute_scale(&ingredient.quantities, &ing_label.quantity)
+                                    * recipe_scale
+                            };
+                            let props = scale_properties(&ingredient.properties, ing_scale);
+                            child_props.push(props.clone());
+                            children.push(NutritionTraceNode {
+                                alias: ing_label.alias.clone(),
+                                kind: "ingredient".to_string(),
+                                quantity: ing_label.quantity.clone(),
+                                properties: props,
+                                children: vec![],
+                            });
+                        } else {
+                            children.push(NutritionTraceNode {
+                                alias: ing_label.alias.clone(),
+                                kind: "unresolved".to_string(),
+                                quantity: ing_label.quantity.clone(),
+                                properties: vec![],
+                                children: vec![],
+                            });
+                        }
+                    }
+
+                    let properties = sum_properties(child_props);
+                    intake_all.push(properties.clone());
+                    intake_entries.push(NutritionTraceNode {
+                        alias: ate.food_alias.clone(),
+                        kind: "recipe".to_string(),
+                        quantity: ate.quantity.clone(),
+                        properties,
+                        children,
+                    });
+                } else {
+                    intake_entries.push(NutritionTraceNode {
+                        alias: ate.food_alias.clone(),
+                        kind: "unresolved".to_string(),
+                        quantity: ate.quantity.clone(),
+                        properties: vec![],
+                        children: vec![],
+                    });
+                }
+            }
+            DayItem::Exercised(exercised) => {
+                let alias_key = normalize_label(&exercised.exercise_alias);
+
+                if let Some(ex) = exercises.get(&alias_key) {
+                    let props = compute_exercise_nutrition(ex, Some(&exercised.quantity));
+                    exercise_all.push(props.clone());
+                    exercise_entries.push(NutritionTraceNode {
+                        alias: exercised.exercise_alias.clone(),
+                        kind: "exercise".to_string(),
+                        quantity: exercised.quantity.clone(),
+                        properties: props,
+                        children: vec![],
+                    });
+                } else {
+                    exercise_entries.push(NutritionTraceNode {
+                        alias: exercised.exercise_alias.clone(),
+                        kind: "unresolved".to_string(),
+                        quantity: exercised.quantity.clone(),
+                        properties: vec![],
+                        children: vec![],
+                    });
+                }
+            }
+            DayItem::Meal(_) => {}
+        }
+    }
+
+    let intake = sum_properties(intake_all);
+    let exercise = sum_properties(exercise_all);
+    let net = subtract_properties(&intake, &exercise);
+
+    DailyNutritionTraceReport {
+        date: day.date.clone(),
+        intake_entries,
+        exercise_entries,
+        intake,
+        exercise,
+        net,
+    }
+}
+
+/// Compute trace reports for all `@day` entries within `[start, end]`.
+pub fn compute_trace_report(
+    document: &Document,
+    start: Option<&str>,
+    end: Option<&str>,
+) -> Vec<DailyNutritionTraceReport> {
+    document
+        .items
+        .iter()
+        .filter_map(|item| {
+            if let Item::Day(day) = item {
+                let in_range = start.map_or(true, |s| day.date.as_str() >= s)
+                    && end.map_or(true, |e| day.date.as_str() <= e);
+                if in_range {
+                    Some(compute_daily_trace_report(document, day))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 /// Compute daily nutrition reports for every `@day` block whose date falls

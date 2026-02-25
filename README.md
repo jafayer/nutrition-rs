@@ -361,8 +361,13 @@ nutrition --file <FILE> report [--start <DATE>] [--end <DATE>] [--ate-only] [--n
 | `--ate-only` | Show only intake; exclude exercise and net computation |
 | `--no-aggregate` | Show each day individually instead of averaging over the range |
 | `--json` | Output raw JSON |
+| `--trace` | Show a contribution tree of where each `@ate` / `@exercised` value came from |
 
 When `--start` and `--end` span multiple days the results are **aggregated** (averaged per day) by default. Use `--no-aggregate` to see each day separately.
+
+When `--trace` is provided, `report` prints a per-day source tree instead of the nutrition-label summary. Each node shows the logged alias, resolved kind (`ingredient`, `recipe`, `exercise`, or `unresolved`), quantity, and scaled property contributions. Recipe nodes include child ingredient nodes so you can see how totals were composed.
+
+`--trace --json` outputs structured trace JSON instead of the text tree.
 
 **Examples:**
 ```bash
@@ -374,6 +379,12 @@ nutrition --file diet.nutrition report --start 2026-01-06 --end 2026-01-06
 
 # Weekly average
 nutrition --file diet.nutrition report --start 2026-01-01 --end 2026-01-07
+
+# Trace where today's totals came from
+nutrition --file diet.nutrition report --trace
+
+# Trace output as JSON
+nutrition --file diet.nutrition report --trace --json
 
 # All days individually, intake only, as JSON
 nutrition --file diet.nutrition report \

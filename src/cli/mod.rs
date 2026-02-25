@@ -102,6 +102,12 @@ pub enum Commands {
 
         #[arg(long, help = "Output raw JSON instead of the nutrition-label display")]
         json: bool,
+
+        #[arg(
+            long,
+            help = "Show per-entry nutrition trace tree (source contributions) instead of standard report"
+        )]
+        trace: bool,
     }
 }
 
@@ -140,8 +146,19 @@ pub fn current_date_iso8601() -> String {
 #[cfg(feature = "runtime")]
 pub async fn run_cli(cli: Cli) {
     use crate::ast::ast::Quantity;
-    use crate::display::{format_aggregated_report, format_daily_report, format_nutrition_report};
-    use crate::nutrition::{aggregate_reports, compute_report, query_nutrition, NutritionReport};
+    use crate::display::{
+        format_aggregated_report,
+        format_daily_report,
+        format_daily_trace_report,
+        format_nutrition_report,
+    };
+    use crate::nutrition::{
+        aggregate_reports,
+        compute_report,
+        compute_trace_report,
+        query_nutrition,
+        NutritionReport,
+    };
 
     match cli.command {
         Commands::Validate { show_tree } => {
@@ -206,7 +223,7 @@ pub async fn run_cli(cli: Cli) {
             }
         }
 
-        Commands::Report { start, end, ate_only, no_aggregate, json } => {
+        Commands::Report { start, end, ate_only, no_aggregate, json, trace } => {
             let file = require_file(&cli.file);
             let document = match file_loader::load_tree(Some(&file)) {
                 Ok(doc) => doc,
@@ -225,6 +242,26 @@ pub async fn run_cli(cli: Cli) {
                 .as_deref()
                 .map(|e| if e == "today" { today.as_str() } else { e })
                 .unwrap_or(today.as_str());
+
+            if trace {
+                let traces = compute_trace_report(&document, Some(start_resolved), Some(end_resolved));
+                if traces.is_empty() {
+                    println!("No @day entries found in the specified range.");
+                    return;
+                }
+
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&traces).unwrap_or_default());
+                } else {
+                    for (idx, trace_report) in traces.iter().enumerate() {
+                        if idx > 0 {
+                            println!();
+                        }
+                        println!("{}", format_daily_trace_report(trace_report));
+                    }
+                }
+                return;
+            }
 
             let reports = compute_report(&document, Some(start_resolved), Some(end_resolved));
 

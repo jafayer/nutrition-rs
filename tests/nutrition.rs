@@ -3,7 +3,7 @@
 use nutrition_rs::ast::ast::{Ate, Day, DayItem, Document, Exercise, Exercised, Ingredient, IngredientLabel, Item, Property, Quantity, Recipe};
 use nutrition_rs::nutrition::{
     aggregate_reports, compute_daily_report, compute_ingredient_nutrition, compute_recipe_nutrition,
-    compute_report, query_nutrition,
+    compute_report, compute_trace_report, query_nutrition,
 };
 
 // ---------------------------------------------------------------------------
@@ -579,4 +579,51 @@ fn aggregate_reports_subtracts_exercise_in_net() {
     let net_cal = agg.net.iter().find(|p| p.name == "calories").unwrap();
     // Each day: 300 - 100 = 200; average = 200
     assert!((net_cal.value.amount - 200.0).abs() < 1e-6);
+}
+
+#[test]
+fn trace_report_includes_recipe_children() {
+    let flour = make_ingredient("flour", 100.0, "g", vec![("calories", 364.0, Some("kcal"))]);
+    let recipe = Recipe {
+        aliases: vec!["bread".to_string()],
+        quantities: vec![Quantity { amount: 1.0, unit: None }],
+        ingredients: vec![IngredientLabel {
+            alias: "flour".to_string(),
+            quantity: Quantity { amount: 100.0, unit: Some("g".to_string()) },
+        }],
+    };
+    let day = Day {
+        date: "2026-07-01".to_string(),
+        items: vec![DayItem::Ate(Ate {
+            food_alias: "bread".to_string(),
+            quantity: Quantity { amount: 1.0, unit: None },
+        })],
+    };
+    let doc = make_document(vec![Item::Ingredient(flour), Item::Recipe(recipe), Item::Day(day)]);
+
+    let traces = compute_trace_report(&doc, Some("2026-07-01"), Some("2026-07-01"));
+    assert_eq!(traces.len(), 1);
+    assert_eq!(traces[0].intake_entries.len(), 1);
+    let root = &traces[0].intake_entries[0];
+    assert_eq!(root.kind, "recipe");
+    assert_eq!(root.children.len(), 1);
+    assert_eq!(root.children[0].alias, "flour");
+    assert_eq!(root.children[0].kind, "ingredient");
+}
+
+#[test]
+fn trace_report_marks_unresolved_ate_alias() {
+    let day = Day {
+        date: "2026-07-02".to_string(),
+        items: vec![DayItem::Ate(Ate {
+            food_alias: "missing food".to_string(),
+            quantity: Quantity { amount: 1.0, unit: None },
+        })],
+    };
+    let doc = make_document(vec![Item::Day(day)]);
+
+    let traces = compute_trace_report(&doc, Some("2026-07-02"), Some("2026-07-02"));
+    assert_eq!(traces.len(), 1);
+    assert_eq!(traces[0].intake_entries.len(), 1);
+    assert_eq!(traces[0].intake_entries[0].kind, "unresolved");
 }
