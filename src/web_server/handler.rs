@@ -5,7 +5,7 @@
 //! `nutrition serve`.
 
 use std::io::Write as IoWrite;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use axum::{
@@ -585,6 +585,7 @@ async fn page_new_exercise() -> Html<String> {
 // ── run_server ────────────────────────────────────────────────────────────────
 
 pub async fn run_server(
+    host: String,
     port: u16,
     file_path: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -626,8 +627,11 @@ pub async fn run_server(
         .route("/api/days/{date}/exercised", post(api_log_exercised))
         .with_state(state);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    println!("Serving nutrition tracker on http://127.0.0.1:{}", port);
+    let ip = host
+      .parse::<IpAddr>()
+      .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    let addr = SocketAddr::from((ip, port));
+    println!("Serving nutrition tracker on http://{}:{}", host, port);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
