@@ -286,7 +286,8 @@ pub async fn run_cli(cli: Cli) {
         },
 
         Commands::Serve { port } => {
-            crate::web_server::handler::run_server(port).await.unwrap();
+            let file = require_file(&cli.file);
+            crate::web_server::handler::run_server(port, file).await.unwrap();
         }
 
         Commands::Query { name, quantity, json } => {
