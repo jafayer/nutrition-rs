@@ -1,10 +1,66 @@
 use std::path::{Path, PathBuf};
+use std::collections::HashMap;
 
 use crate::ast::ast::Document;
 use crate::lexer::lexer::Token;
 use crate::parser::parser::{parse, parse_with_diagnostics, parse_with_errors};
 use crate::cli::env::get_default_file_from_env;
 use logos::Logos;
+
+#[derive(Clone, Debug)]
+pub struct SourceSegment {
+    pub generated: std::ops::Range<usize>,
+    pub origin_file: String,
+    pub origin: std::ops::Range<usize>,
+}
+
+#[derive(Clone, Debug)]
+pub struct OriginSpan {
+    pub file: String,
+    pub span: std::ops::Range<usize>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ExpandedSourceMap {
+    pub segments: Vec<SourceSegment>,
+    pub sources: HashMap<String, String>,
+}
+
+impl ExpandedSourceMap {
+    pub fn map_generated_span(&self, span: &std::ops::Range<usize>) -> Option<OriginSpan> {
+        let generated_start = span.start;
+        let segment = self
+            .segments
+            .iter()
+            .find(|seg| generated_start >= seg.generated.start && generated_start < seg.generated.end)?;
+
+        let offset_in_segment = generated_start.saturating_sub(segment.generated.start);
+        let mut origin_start = segment.origin.start.saturating_add(offset_in_segment);
+        if origin_start >= segment.origin.end {
+            origin_start = segment.origin.end.saturating_sub(1);
+        }
+
+        let requested_len = span.end.saturating_sub(span.start).max(1);
+        let available_len = segment.origin.end.saturating_sub(origin_start).max(1);
+        let mapped_len = requested_len.min(available_len);
+        let origin_end = origin_start.saturating_add(mapped_len);
+
+        Some(OriginSpan {
+            file: segment.origin_file.clone(),
+            span: origin_start..origin_end,
+        })
+    }
+
+    pub fn source_for_file(&self, file: &str) -> Option<&str> {
+        self.sources.get(file).map(String::as_str)
+    }
+}
+
+#[derive(Clone, Debug)]
+struct ExpandedSource {
+    source: String,
+    source_map: ExpandedSourceMap,
+}
 
 fn detect_import_path(line: &str) -> Option<String> {
     let tokens: Vec<Token> = Token::lexer(line).filter_map(Result::ok).collect();
@@ -43,7 +99,31 @@ fn format_import_cycle(stack: &[PathBuf], repeated: &Path) -> String {
     chain.join(" -> ")
 }
 
-fn expand_imports_recursive(path: &Path, stack: &mut Vec<PathBuf>) -> Result<String, String> {
+fn append_segment(
+    out_source: &mut String,
+    segments: &mut Vec<SourceSegment>,
+    origin_file: &str,
+    origin_span: std::ops::Range<usize>,
+    text: &str,
+) {
+    if text.is_empty() {
+        return;
+    }
+
+    let generated_start = out_source.len();
+    out_source.push_str(text);
+    let generated_end = out_source.len();
+
+    if generated_end > generated_start {
+        segments.push(SourceSegment {
+            generated: generated_start..generated_end,
+            origin_file: origin_file.to_string(),
+            origin: origin_span,
+        });
+    }
+}
+
+fn expand_imports_recursive(path: &Path, stack: &mut Vec<PathBuf>) -> Result<ExpandedSource, String> {
     let canonical = std::fs::canonicalize(path)
         .map_err(|e| format!("Failed to resolve file '{}': {}", path.display(), e))?;
 
@@ -58,26 +138,65 @@ fn expand_imports_recursive(path: &Path, stack: &mut Vec<PathBuf>) -> Result<Str
     let source = std::fs::read_to_string(&canonical)
         .map_err(|e| format!("Failed to read file '{}': {}", canonical.display(), e))?;
 
+    let canonical_str = canonical.display().to_string();
     let mut expanded = String::new();
+    let mut segments: Vec<SourceSegment> = Vec::new();
+    let mut sources: HashMap<String, String> = HashMap::new();
+    sources.insert(canonical_str.clone(), source.clone());
+
+    let mut source_cursor = 0usize;
     for segment in source.split_inclusive('\n') {
+        let segment_start = source_cursor;
+        let segment_end = source_cursor + segment.len();
+        source_cursor = segment_end;
+
         let line = segment.strip_suffix('\n').unwrap_or(segment);
         if let Some(import_path) = detect_import_path(line) {
             let target = resolve_import_target(&canonical, &import_path)?;
             let imported = expand_imports_recursive(&target, stack)?;
-            expanded.push_str(&imported);
-            if !imported.ends_with('\n') {
-                expanded.push('\n');
+
+            let imported_offset = expanded.len();
+            expanded.push_str(&imported.source);
+            for seg in imported.source_map.segments {
+                segments.push(SourceSegment {
+                    generated: (seg.generated.start + imported_offset)..(seg.generated.end + imported_offset),
+                    origin_file: seg.origin_file,
+                    origin: seg.origin,
+                });
+            }
+            for (path, src) in imported.source_map.sources {
+                sources.entry(path).or_insert(src);
+            }
+
+            if !imported.source.ends_with('\n') {
+                append_segment(
+                    &mut expanded,
+                    &mut segments,
+                    &canonical_str,
+                    segment_start..segment_end.min(segment_start + 1),
+                    "\n",
+                );
             }
         } else {
-            expanded.push_str(segment);
+            append_segment(
+                &mut expanded,
+                &mut segments,
+                &canonical_str,
+                segment_start..segment_end,
+                segment,
+            );
         }
     }
 
     stack.pop();
-    Ok(expanded)
+
+    Ok(ExpandedSource {
+        source: expanded,
+        source_map: ExpandedSourceMap { segments, sources },
+    })
 }
 
-fn load_expanded_source(path: &str) -> Result<String, String> {
+fn load_expanded_source(path: &str) -> Result<ExpandedSource, String> {
     let mut stack = Vec::new();
     expand_imports_recursive(Path::new(path), &mut stack)
 }
@@ -91,8 +210,8 @@ pub fn load_tree(file_path: Option<&str>) -> Result<Document, String> {
         },
     };
 
-    let source = load_expanded_source(&path)?;
-    parse(&source).ok_or_else(|| format!("Failed to parse input file {}", path))
+    let expanded = load_expanded_source(&path)?;
+    parse(&expanded.source).ok_or_else(|| format!("Failed to parse input file {}", path))
 }
 
 /// Parse a file and return both the (possibly partial) [`Document`] and any
@@ -100,7 +219,7 @@ pub fn load_tree(file_path: Option<&str>) -> Result<Document, String> {
 /// malformed declaration does not prevent subsequent items from being parsed.
 pub fn load_tree_with_errors(file_path: &str) -> (Option<Document>, Vec<String>) {
     let source = match load_expanded_source(file_path) {
-        Ok(s) => s,
+        Ok(s) => s.source,
         Err(e) => return (None, vec![e]),
     };
     parse_with_errors(&source)
@@ -116,12 +235,13 @@ pub fn load_source_with_diagnostics(
 ) -> Result<
     (
         String,
+        ExpandedSourceMap,
         Option<crate::ast::ast::Document>,
         Vec<crate::parser::parser::ParseDiagnostic>,
     ),
     String,
 > {
-    let source = load_expanded_source(path)?;
-    let (doc, diagnostics) = parse_with_diagnostics(&source);
-    Ok((source, doc, diagnostics))
+    let expanded = load_expanded_source(path)?;
+    let (doc, diagnostics) = parse_with_diagnostics(&expanded.source);
+    Ok((expanded.source, expanded.source_map, doc, diagnostics))
 }

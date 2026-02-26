@@ -778,6 +778,84 @@ fn find_unexpected_in_body(
     None
 }
 
+/// Scan a declaration header (tokens before the opening `{`) for tokens that
+/// cannot appear there and return a byte span + explanatory message.
+///
+/// This complements [`find_unexpected_in_body`] for malformed declarations
+/// where the failure occurs before entering the block body.
+fn find_unexpected_in_header(
+    chunk: &[Token],
+    chunk_global_start: usize,
+    spans: &[std::ops::Range<usize>],
+    decl: &str,
+) -> Option<(std::ops::Range<usize>, String)> {
+    let header_end = chunk.iter().position(|t| matches!(t, Token::LBrace))?;
+    let header = &chunk[..header_end];
+    if header.is_empty() {
+        return None;
+    }
+
+    let mut seen_decl_keyword = false;
+    for (i, tok) in header.iter().enumerate() {
+        if !seen_decl_keyword {
+            if is_top_level_start(tok) {
+                seen_decl_keyword = true;
+                continue;
+            }
+        }
+
+        if matches!(tok, Token::Newline | Token::Comment(_)) {
+            continue;
+        }
+
+        if matches!(tok, Token::Comma) {
+            let note_span = note_byte_span(chunk, i, chunk_global_start, spans)?;
+            let message = match decl {
+                "@ingredient" | "@food" | "@recipe" | "@exercise" => format!(
+                    "unexpected `{tok}` in {decl} header — aliases are separated by whitespace/newlines, not commas"
+                ),
+                _ => format!("unexpected `{tok}` in {decl} header"),
+            };
+            return Some((note_span, message));
+        }
+
+        let is_allowed = match decl {
+            "@ingredient" | "@food" | "@recipe" | "@exercise" => matches!(
+                tok,
+                Token::LParen
+                    | Token::RParen
+                    | Token::Number(_)
+                    | Token::Identifier(_)
+                    | Token::String(_)
+            ),
+            "@day" => matches!(tok, Token::String(_)),
+            "!import" => matches!(tok, Token::String(_)),
+            _ => true,
+        };
+
+        if !is_allowed {
+            let note_span = note_byte_span(chunk, i, chunk_global_start, spans)?;
+            let expected_hint = match decl {
+                "@ingredient" | "@food" | "@recipe" | "@exercise" => {
+                    "quantities/aliases followed by `{`"
+                }
+                "@day" => "a quoted ISO date (e.g. `\"2026-01-01\"`) followed by `{`",
+                "!import" => "a quoted path (e.g. `\"./file.nutrition\"`)",
+                _ => "a valid declaration header",
+            };
+
+            return Some((
+                note_span,
+                format!(
+                    "unexpected `{tok}` in {decl} header — expected {expected_hint}"
+                ),
+            ));
+        }
+    }
+
+    None
+}
+
 /// Parse a nutrition source string, returning both the (possibly partial)
 /// [`Document`] and a list of [`ParseDiagnostic`] values that carry the
 /// byte-span information needed for rich diagnostic rendering.
@@ -842,9 +920,11 @@ pub fn parse_with_diagnostics(source: &str) -> (Option<Document>, Vec<ParseDiagn
         match parse_chunk(chunk, start_line) {
             Ok(chunk_items) => items.extend(chunk_items),
             Err(_) => {
-                // Try to locate the specific offending token in the body.
+                // Try to locate the specific offending token in the body,
+                // then fall back to the header when needed.
                 let (note_span, note_message) =
                     find_unexpected_in_body(chunk, *start, &spans, decl)
+                        .or_else(|| find_unexpected_in_header(chunk, *start, &spans, decl))
                         .map(|(s, m)| (Some(s), Some(m)))
                         .unwrap_or((None, None));
 

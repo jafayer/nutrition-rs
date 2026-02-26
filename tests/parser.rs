@@ -677,3 +677,25 @@ fn diagnostic_header_only_when_no_brace() {
         "no brace → no note_span expected"
     );
 }
+
+#[test]
+fn diagnostic_header_flags_comma_separated_aliases() {
+    let source = r#"@food(1) "Fajita Veggie Breakfast Burrito", "Wawa breakfast burrito" {
+  calories: 520
+}"#;
+
+    let (_, diags) = parse_with_diagnostics(source);
+    assert!(!diags.is_empty(), "should report malformed declaration");
+
+    let d = &diags[0];
+    let note = d.note_span.as_ref().expect("note_span should be set for header token");
+    let snippet = &source[note.clone()];
+    assert!(snippet.contains(','), "expected note span to include comma, got: {snippet:?}");
+
+    let message = d
+        .note_message
+        .as_deref()
+        .expect("note_message should be set for header token");
+    assert!(message.contains("header"), "expected header-focused note, got: {message}");
+    assert!(message.contains("commas"), "expected comma guidance, got: {message}");
+}
