@@ -75,6 +75,9 @@ pub enum Commands {
 
     /// Compute daily nutrition reports from @day blocks.
     Report {
+        #[arg(help = "Optional date (e.g. '2026-01-01')")]
+        date: Option<String>,
+
         #[arg(
             long,
             help = "Start date filter, inclusive (e.g. '2026-01-01'). Defaults to today."
@@ -134,6 +137,49 @@ pub fn print_document(node: crate::ast::ast::Document) {
 /// Return the current local date as a `YYYY-MM-DD` string.
 pub fn current_date_iso8601() -> String {
     Local::now().format("%Y-%m-%d").to_string()
+}
+
+#[derive(Debug, Clone)]
+enum ReportMode {
+    Single { date: String },
+    Range { start: String, end: String },
+}
+
+fn normalize_report_date(raw: Option<&str>, today: &str) -> String {
+    match raw {
+        Some("today") | None => today.to_string(),
+        Some(value) => value.to_string(),
+    }
+}
+
+fn resolve_report_mode(
+    date: Option<&str>,
+    start: Option<&str>,
+    end: Option<&str>,
+    today: &str,
+) -> Result<ReportMode, String> {
+    if date.is_some() && (start.is_some() || end.is_some()) {
+        return Err(
+            "`report [date]` cannot be combined with `--start`/`--end`; use either single-day mode or range mode".to_string(),
+        );
+    }
+
+    if let Some(single_date) = date {
+        return Ok(ReportMode::Single {
+            date: normalize_report_date(Some(single_date), today),
+        });
+    }
+
+    if start.is_some() || end.is_some() {
+        return Ok(ReportMode::Range {
+            start: normalize_report_date(start, today),
+            end: normalize_report_date(end, today),
+        });
+    }
+
+    Ok(ReportMode::Single {
+        date: today.to_string(),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -223,7 +269,7 @@ pub async fn run_cli(cli: Cli) {
             }
         }
 
-        Commands::Report { start, end, ate_only, no_aggregate, json, trace } => {
+        Commands::Report { date, start, end, ate_only, no_aggregate, json, trace } => {
             let file = require_file(&cli.file);
             let document = match file_loader::load_tree(Some(&file)) {
                 Ok(doc) => doc,
@@ -234,19 +280,35 @@ pub async fn run_cli(cli: Cli) {
             };
 
             let today = current_date_iso8601();
-            let start_resolved = start
-                .as_deref()
-                .map(|s| if s == "today" { today.as_str() } else { s })
-                .unwrap_or(today.as_str());
-            let end_resolved = end
-                .as_deref()
-                .map(|e| if e == "today" { today.as_str() } else { e })
-                .unwrap_or(today.as_str());
+            let report_mode = match resolve_report_mode(
+                date.as_deref(),
+                start.as_deref(),
+                end.as_deref(),
+                &today,
+            ) {
+                Ok(mode) => mode,
+                Err(message) => {
+                    eprintln!("Report options error: {}", message);
+                    std::process::exit(1);
+                }
+            };
+
+            let (start_resolved, end_resolved) = match &report_mode {
+                ReportMode::Single { date } => (date.as_str(), date.as_str()),
+                ReportMode::Range { start, end } => (start.as_str(), end.as_str()),
+            };
 
             if trace {
                 let traces = compute_trace_report(&document, Some(start_resolved), Some(end_resolved));
                 if traces.is_empty() {
-                    println!("No @day entries found in the specified range.");
+                    match report_mode {
+                        ReportMode::Single { .. } => {
+                            println!("No @day entry found for the specified date.");
+                        }
+                        ReportMode::Range { .. } => {
+                            println!("No @day entries found in the specified range.");
+                        }
+                    }
                     return;
                 }
 
@@ -266,12 +328,20 @@ pub async fn run_cli(cli: Cli) {
             let reports = compute_report(&document, Some(start_resolved), Some(end_resolved));
 
             if reports.is_empty() {
-                println!("No @day entries found in the specified range.");
+                match report_mode {
+                    ReportMode::Single { .. } => {
+                        println!("No @day entry found for the specified date.");
+                    }
+                    ReportMode::Range { .. } => {
+                        println!("No @day entries found in the specified range.");
+                    }
+                }
                 return;
             }
 
-            let is_range = start_resolved != end_resolved;
-            let use_aggregate = is_range && !no_aggregate;
+            let use_aggregate = matches!(report_mode, ReportMode::Range { .. })
+                && start_resolved != end_resolved
+                && !no_aggregate;
 
             if use_aggregate {
                 let agg = aggregate_reports(&reports, start_resolved, end_resolved);
@@ -323,5 +393,52 @@ pub async fn run_cli(cli: Cli) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{resolve_report_mode, ReportMode};
+
+    #[test]
+    fn report_mode_defaults_to_single_today() {
+        let mode = resolve_report_mode(None, None, None, "2026-02-26").unwrap();
+        match mode {
+            ReportMode::Single { date } => assert_eq!(date, "2026-02-26"),
+            other => panic!("expected single mode, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn report_mode_uses_positional_date() {
+        let mode = resolve_report_mode(Some("2026-01-07"), None, None, "2026-02-26").unwrap();
+        match mode {
+            ReportMode::Single { date } => assert_eq!(date, "2026-01-07"),
+            other => panic!("expected single mode, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn report_mode_supports_range_with_partial_bounds() {
+        let mode = resolve_report_mode(None, Some("2026-01-01"), None, "2026-02-26").unwrap();
+        match mode {
+            ReportMode::Range { start, end } => {
+                assert_eq!(start, "2026-01-01");
+                assert_eq!(end, "2026-02-26");
+            }
+            other => panic!("expected range mode, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn report_mode_rejects_mixing_date_and_range_flags() {
+        let error = resolve_report_mode(
+            Some("2026-01-07"),
+            Some("2026-01-01"),
+            Some("2026-01-31"),
+            "2026-02-26",
+        )
+        .expect_err("expected conflict error");
+        assert!(error.contains("cannot be combined"));
     }
 }

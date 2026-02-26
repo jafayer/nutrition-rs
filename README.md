@@ -348,20 +348,27 @@ nutrition --file diet.nutrition query --name "chickpea stew" --json
 
 ### `report`
 
-Compute daily nutrition reports from `@day` blocks. By default, shows today's entry.
+Compute daily nutrition reports from `@day` blocks.
+
+- **Single-day mode**: `report [date]` (defaults to `today`)
+- **Range mode**: `report --start <DATE> --end <DATE>`
 
 ```bash
-nutrition --file <FILE> report [--start <DATE>] [--end <DATE>] [--ate-only] [--no-aggregate] [--json]
+nutrition --file <FILE> report [date] [--ate-only] [--json] [--trace]
+nutrition --file <FILE> report --start <DATE> --end <DATE> [--ate-only] [--no-aggregate] [--json] [--trace]
 ```
 
 | Flag | Description |
 |------|-------------|
+| `[date]` | Optional positional date (`YYYY-MM-DD` or `today`) for single-day mode |
 | `--start <DATE>` | Start date, inclusive (`YYYY-MM-DD` or `today`). Defaults to today. |
 | `--end <DATE>` | End date, inclusive (`YYYY-MM-DD` or `today`). Defaults to today. |
 | `--ate-only` | Show only intake; exclude exercise and net computation |
 | `--no-aggregate` | Show each day individually instead of averaging over the range |
 | `--json` | Output raw JSON |
 | `--trace` | Show a contribution tree of where each `@ate` / `@exercised` value came from |
+
+`[date]` cannot be combined with `--start` or `--end`.
 
 When `--start` and `--end` span multiple days the results are **aggregated** (averaged per day) by default. Use `--no-aggregate` to see each day separately.
 
@@ -375,7 +382,7 @@ When `--trace` is provided, `report` prints a per-day source tree instead of the
 nutrition --file diet.nutrition report
 
 # A specific day
-nutrition --file diet.nutrition report --start 2026-01-06 --end 2026-01-06
+nutrition --file diet.nutrition report 2026-01-06
 
 # Weekly average
 nutrition --file diet.nutrition report --start 2026-01-01 --end 2026-01-07

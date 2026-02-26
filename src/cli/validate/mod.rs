@@ -5,6 +5,57 @@ use crate::ast::ast::{Document, Item};
 use crate::cli::file_loader;
 use crate::lexer::lexer::Token;
 
+fn clamp_span(source: &str, span: &std::ops::Range<usize>) -> std::ops::Range<usize> {
+    let len = source.len();
+    if len == 0 {
+        return 0..0;
+    }
+
+    let mut start = span.start.min(len - 1);
+    while start > 0 && !source.is_char_boundary(start) {
+        start -= 1;
+    }
+
+    let mut end = span.end.min(len);
+    while end > start && !source.is_char_boundary(end) {
+        end -= 1;
+    }
+
+    if end <= start {
+        let mut next = start + 1;
+        while next < len && !source.is_char_boundary(next) {
+            next += 1;
+        }
+        end = next.min(len);
+    }
+
+    start..end
+}
+
+fn line_col_from_byte(source: &str, byte_idx: usize) -> (usize, usize) {
+    if source.is_empty() {
+        return (1, 1);
+    }
+
+    let clamped = byte_idx.min(source.len().saturating_sub(1));
+    let mut boundary = clamped;
+    while boundary > 0 && !source.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+
+    let prefix = &source[..boundary];
+    let line = prefix.bytes().filter(|b| *b == b'\n').count() + 1;
+    let col = prefix
+        .rsplit_once('\n')
+        .map(|(_, tail)| tail.chars().count() + 1)
+        .unwrap_or_else(|| prefix.chars().count() + 1);
+    (line, col)
+}
+
+fn line_snippet(source: &str, line_number: usize) -> Option<&str> {
+    source.lines().nth(line_number.saturating_sub(1))
+}
+
 fn normalize_label(label: &str) -> String {
     label.trim().to_lowercase()
 }
@@ -231,7 +282,7 @@ fn validate_semantics(document: &Document, source: &str) -> Vec<SemanticDiagnost
 }
 
 pub fn run_validate(file: &str, show_tree: bool) -> Result<(), i32> {
-    let (source, document, diagnostics) = match file_loader::load_source_with_diagnostics(file) {
+    let (source, source_map, document, diagnostics) = match file_loader::load_source_with_diagnostics(file) {
         Ok(result) => result,
         Err(e) => {
             eprintln!("error: {}", e);
@@ -240,28 +291,76 @@ pub fn run_validate(file: &str, show_tree: bool) -> Result<(), i32> {
     };
 
     for diag in &diagnostics {
-        let mut report =
-            Report::build(ReportKind::Error, file, diag.byte_span.start)
-                .with_message(&diag.message)
-                .with_label(
-                    Label::new((file, diag.byte_span.clone()))
-                        .with_message(format!("this {} could not be parsed", diag.declaration_kind))
-                        .with_color(Color::Red),
-                );
+        let header_span = clamp_span(&source, &diag.byte_span);
 
-        if let (Some(note_span), Some(note_msg)) = (&diag.note_span, &diag.note_message) {
-            report = report.with_label(
-                Label::new((file, note_span.clone()))
-                    .with_message(note_msg)
-                    .with_color(Color::Yellow),
-            );
+        let mapped_header = source_map
+            .map_generated_span(&header_span)
+            .unwrap_or(file_loader::OriginSpan {
+                file: file.to_string(),
+                span: header_span.clone(),
+            });
+        let mapped_source = source_map
+            .source_for_file(&mapped_header.file)
+            .unwrap_or(&source);
+        let mapped_header_span = clamp_span(mapped_source, &mapped_header.span);
+        let (mapped_header_line, mapped_header_col) =
+            line_col_from_byte(mapped_source, mapped_header_span.start);
+
+        let note_context = if let (Some(note_span), Some(note_msg)) = (&diag.note_span, &diag.note_message) {
+            let note_span = clamp_span(&source, note_span);
+            let mapped_note = source_map
+                .map_generated_span(&note_span)
+                .unwrap_or(file_loader::OriginSpan {
+                    file: mapped_header.file.clone(),
+                    span: mapped_header_span.clone(),
+                });
+
+            if mapped_note.file == mapped_header.file {
+                let mapped_note_span = clamp_span(mapped_source, &mapped_note.span);
+                let (note_line, note_col) =
+                    line_col_from_byte(mapped_source, mapped_note_span.start);
+                Some((mapped_note_span, note_msg.clone(), note_line, note_col))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let primary_start = note_context
+            .as_ref()
+            .map(|(span, _, _, _)| span.start)
+            .unwrap_or(header_span.start);
+
+        let mut report =
+            Report::build(ReportKind::Error, &mapped_header.file, primary_start)
+                .with_message(&diag.message)
+                .with_label(Label::new((&mapped_header.file, mapped_header_span.clone()))
+                    .with_message(format!(
+                        "this {} could not be parsed (line {}, col {})",
+                        diag.declaration_kind, mapped_header_line, mapped_header_col
+                    ))
+                    .with_color(Color::Red));
+
+        if let Some((note_span, note_msg, note_line, note_col)) = note_context {
+            report = report.with_label(Label::new((&mapped_header.file, note_span))
+                .with_message(format!("{} (line {}, col {})", note_msg, note_line, note_col))
+                .with_color(Color::Yellow));
         }
 
         report
+            .with_note(format!("location: line {}, col {}", mapped_header_line, mapped_header_col))
             .with_help(help_for_kind(diag.declaration_kind))
             .finish()
-            .eprint((file, Source::from(&source)))
+            .eprint((&mapped_header.file, Source::from(mapped_source)))
             .unwrap();
+
+        if let Some(snippet) = line_snippet(mapped_source, mapped_header_line) {
+            eprintln!(
+                "  --> {}:{} | {}",
+                mapped_header_line, mapped_header_col, snippet
+            );
+        }
     }
 
     match document {
@@ -269,16 +368,27 @@ pub fn run_validate(file: &str, show_tree: bool) -> Result<(), i32> {
             let semantic_diagnostics = validate_semantics(&doc, &source);
 
             for diag in &semantic_diagnostics {
-                Report::build(ReportKind::Error, file, diag.byte_span.start)
+                let mapped = source_map
+                    .map_generated_span(&diag.byte_span)
+                    .unwrap_or(file_loader::OriginSpan {
+                        file: file.to_string(),
+                        span: diag.byte_span.clone(),
+                    });
+                let mapped_source = source_map
+                    .source_for_file(&mapped.file)
+                    .unwrap_or(&source);
+                let mapped_span = clamp_span(mapped_source, &mapped.span);
+
+                Report::build(ReportKind::Error, &mapped.file, mapped_span.start)
                     .with_message(&diag.message)
                     .with_label(
-                        Label::new((file, diag.byte_span.clone()))
+                        Label::new((&mapped.file, mapped_span))
                             .with_message(&diag.note_message)
                             .with_color(Color::Red),
                     )
                     .with_help("ensure referenced aliases are defined by @ingredient/@food/@recipe or @exercise before use")
                     .finish()
-                    .eprint((file, Source::from(&source)))
+                    .eprint((&mapped.file, Source::from(mapped_source)))
                     .unwrap();
             }
 
