@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Calendar - Nutrition Tracker{% endblock %}
+
+{% block content %}
+  <h1>🥦 New Food / Ingredient</h1>
+  <p style="color:var(--text-dim);margin-bottom:1rem;">Define a new ingredient with its nutritional data.</p>
+
+  <div class="card">
+    <form id="ing-form">
+      <div>
+        <div class="section-title"><h3>Names / Aliases</h3></div>
+        <p style="color:var(--text-dim);font-size:0.85rem;margin-bottom:0.5rem;">Add one or more names (e.g. "chickpeas", "garbanzo beans").</p>
+        <div class="repeatable-list" id="aliases-list">
+          <div class="repeatable-item">
+            <input type="text" placeholder="e.g. chickpeas" required>
+            <button type="button" class="secondary remove-btn" title="Remove">✕</button>
+          </div>
+        </div>
+        <button type="button" class="secondary" id="add-alias" style="margin-top:0.5rem;">+ Add alias</button>
+      </div>
+
+      <div>
+        <div class="section-title"><h3>Serving Sizes</h3></div>
+        <p style="color:var(--text-dim);font-size:0.85rem;margin-bottom:0.5rem;">e.g. "100g" or "1 cup"</p>
+        <div class="repeatable-list" id="quantities-list">
+          <div class="repeatable-item">
+            <input type="text" placeholder="e.g. 100g" required>
+            <button type="button" class="secondary remove-btn" title="Remove">✕</button>
+          </div>
+        </div>
+        <button type="button" class="secondary" id="add-quantity" style="margin-top:0.5rem;">+ Add serving size</button>
+      </div>
+
+      <div>
+        <div class="section-title"><h3>Nutritional Properties</h3></div>
+        <p style="color:var(--text-dim);font-size:0.85rem;margin-bottom:0.5rem;">e.g. calories: 269, protein: 14.5g</p>
+        <div class="repeatable-list" id="props-list">
+          <div class="repeatable-item">
+            <input type="text" placeholder="Property (e.g. calories)" style="flex:1.2">
+            <input type="text" placeholder="Value (e.g. 269kcal)" style="flex:1">
+            <button type="button" class="secondary remove-btn" title="Remove">✕</button>
+          </div>
+        </div>
+        <button type="button" class="secondary" id="add-prop" style="margin-top:0.5rem;">+ Add property</button>
+      </div>
+
+      <div id="form-msg"></div>
+      <button type="submit" style="align-self:flex-start;">Save Ingredient</button>
+    </form>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+addRemoveHandlers();
+
+document.getElementById('add-alias').onclick = () => {
+  const item = document.createElement('div');
+  item.className = 'repeatable-item';
+  item.innerHTML = '<input type="text" placeholder="e.g. garbanzo beans"><button type="button" class="secondary remove-btn" title="Remove">✕</button>';
+  document.getElementById('aliases-list').appendChild(item);
+  addRemoveHandlers();
+};
+
+document.getElementById('add-quantity').onclick = () => {
+  const item = document.createElement('div');
+  item.className = 'repeatable-item';
+  item.innerHTML = '<input type="text" placeholder="e.g. 1 cup"><button type="button" class="secondary remove-btn" title="Remove">✕</button>';
+  document.getElementById('quantities-list').appendChild(item);
+  addRemoveHandlers();
+};
+
+document.getElementById('add-prop').onclick = () => {
+  const item = document.createElement('div');
+  item.className = 'repeatable-item';
+  item.innerHTML = '<input type="text" placeholder="Property (e.g. protein)" style="flex:1.2"><input type="text" placeholder="Value (e.g. 14.5g)" style="flex:1"><button type="button" class="secondary remove-btn" title="Remove">✕</button>';
+  document.getElementById('props-list').appendChild(item);
+  addRemoveHandlers();
+};
+
+document.getElementById('ing-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const msgEl = document.getElementById('form-msg');
+
+  const aliases = [...document.getElementById('aliases-list').querySelectorAll('input')].map(i => i.value.trim()).filter(Boolean);
+  const quantities = [...document.getElementById('quantities-list').querySelectorAll('input')].map(i => parseQuantityStr(i.value)).filter(Boolean);
+
+  const propItems = [...document.getElementById('props-list').querySelectorAll('.repeatable-item')];
+  const properties = propItems.map(item => {
+    const inputs = item.querySelectorAll('input');
+    const name = inputs[0].value.trim();
+    const val  = parseQuantityStr(inputs[1].value);
+    if (!name || !val) return null;
+    return { name, value: val };
+  }).filter(Boolean);
+
+  if (aliases.length === 0) { msgEl.innerHTML = '<div class="alert alert-error">At least one alias is required.</div>'; return; }
+  if (quantities.length === 0) { msgEl.innerHTML = '<div class="alert alert-error">At least one serving size is required.</div>'; return; }
+
+  const body = { aliases, quantities, properties };
+  const res = await fetch('/api/ingredients', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  if (res.ok) {
+    msgEl.innerHTML = `<div class="alert alert-success">✓ Ingredient "${aliases[0]}" saved! <a href="/query">Search</a> or <a href="/">Log food</a></div>`;
+    e.target.reset();
+  } else {
+    const err = await res.json();
+    msgEl.innerHTML = `<div class="alert alert-error">${err.error || 'Error saving ingredient'}</div>`;
+  }
+});
+</script>
+{% endblock %}

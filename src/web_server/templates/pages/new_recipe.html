@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}New Recipe - Nutrition Tracker{% endblock %}
+{% block content %}
+  <h1>📖 New Recipe</h1>
+  <p style="color:var(--text-dim);margin-bottom:1rem;">Combine ingredients into a named recipe.</p>
+
+  <div class="card">
+    <form id="recipe-form">
+      <div>
+        <div class="section-title"><h3>Recipe Name(s)</h3></div>
+        <div class="repeatable-list" id="aliases-list">
+          <div class="repeatable-item">
+            <input type="text" placeholder="e.g. chickpea stew" required>
+            <button type="button" class="secondary remove-btn" title="Remove">✕</button>
+          </div>
+        </div>
+        <button type="button" class="secondary" id="add-alias" style="margin-top:0.5rem;">+ Add alias</button>
+      </div>
+
+      <div>
+        <div class="section-title"><h3>Yield / Servings</h3></div>
+        <p style="color:var(--text-dim);font-size:0.85rem;margin-bottom:0.5rem;">How much does this recipe make? e.g. "4 servings", "500g"</p>
+        <div class="repeatable-list" id="quantities-list">
+          <div class="repeatable-item">
+            <input type="text" placeholder="e.g. 4 servings" required>
+            <button type="button" class="secondary remove-btn" title="Remove">✕</button>
+          </div>
+        </div>
+        <button type="button" class="secondary" id="add-quantity" style="margin-top:0.5rem;">+ Add quantity</button>
+      </div>
+
+      <div>
+        <div class="section-title"><h3>Ingredients</h3></div>
+        <p style="color:var(--text-dim);font-size:0.85rem;margin-bottom:0.5rem;">Use ingredient aliases already defined in your file.</p>
+        <div class="repeatable-list" id="ings-list">
+          <div class="repeatable-item">
+            <input type="text" placeholder="Ingredient alias" list="ing-options" style="flex:1.5" autocomplete="off">
+            <input type="text" placeholder="Quantity (e.g. 200g)" style="flex:1">
+            <button type="button" class="secondary remove-btn" title="Remove">✕</button>
+          </div>
+        </div>
+        <datalist id="ing-options"></datalist>
+        <button type="button" class="secondary" id="add-ing" style="margin-top:0.5rem;">+ Add ingredient</button>
+      </div>
+
+      <div id="form-msg"></div>
+      <button type="submit" style="align-self:flex-start;">Save Recipe</button>
+    </form>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadIngredientOptions() {
+  const res = await fetch('/api/ingredients');
+  const ings = await res.json();
+  const opts = document.getElementById('ing-options');
+  const aliases = new Set();
+  (ings||[]).forEach(i => (i.aliases||[]).forEach(a => aliases.add(a)));
+  opts.innerHTML = [...aliases].map(a => `<option value="${a}">`).join('');
+}
+loadIngredientOptions();
+
+addRemoveHandlers();
+
+document.getElementById('add-alias').onclick = () => {
+  const item = document.createElement('div'); item.className = 'repeatable-item';
+  item.innerHTML = '<input type="text" placeholder="e.g. stew"><button type="button" class="secondary remove-btn" title="Remove">✕</button>';
+  document.getElementById('aliases-list').appendChild(item); addRemoveHandlers();
+};
+document.getElementById('add-quantity').onclick = () => {
+  const item = document.createElement('div'); item.className = 'repeatable-item';
+  item.innerHTML = '<input type="text" placeholder="e.g. 8 servings"><button type="button" class="secondary remove-btn" title="Remove">✕</button>';
+  document.getElementById('quantities-list').appendChild(item); addRemoveHandlers();
+};
+document.getElementById('add-ing').onclick = () => {
+  const item = document.createElement('div'); item.className = 'repeatable-item';
+  item.innerHTML = '<input type="text" placeholder="Ingredient alias" list="ing-options" style="flex:1.5" autocomplete="off"><input type="text" placeholder="Quantity (e.g. 100g)" style="flex:1"><button type="button" class="secondary remove-btn" title="Remove">✕</button>';
+  document.getElementById('ings-list').appendChild(item); addRemoveHandlers();
+};
+
+document.getElementById('recipe-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const msgEl = document.getElementById('form-msg');
+
+  const aliases = [...document.getElementById('aliases-list').querySelectorAll('input')].map(i => i.value.trim()).filter(Boolean);
+  const quantities = [...document.getElementById('quantities-list').querySelectorAll('input')].map(i => parseQuantityStr(i.value)).filter(Boolean);
+
+  const ingItems = [...document.getElementById('ings-list').querySelectorAll('.repeatable-item')];
+  const ingredients = ingItems.map(item => {
+    const inputs = item.querySelectorAll('input');
+    const alias = inputs[0].value.trim();
+    const qty = parseQuantityStr(inputs[1].value);
+    if (!alias || !qty) return null;
+    return { alias, quantity: qty };
+  }).filter(Boolean);
+
+  if (aliases.length === 0) { msgEl.innerHTML = '<div class="alert alert-error">At least one name is required.</div>'; return; }
+  if (quantities.length === 0) { msgEl.innerHTML = '<div class="alert alert-error">At least one serving quantity is required.</div>'; return; }
+
+  const body = { aliases, quantities, ingredients };
+  const res = await fetch('/api/recipes', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  if (res.ok) {
+    msgEl.innerHTML = `<div class="alert alert-success">✓ Recipe "${aliases[0]}" saved! <a href="/query">Search</a> or <a href="/">Log food</a></div>`;
+    e.target.reset();
+  } else {
+    const err = await res.json();
+    msgEl.innerHTML = `<div class="alert alert-error">${err.error || 'Error saving recipe'}</div>`;
+  }
+});
+</script>
+{% endblock %}

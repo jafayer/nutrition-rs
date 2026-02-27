@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Calendar - Nutrition Tracker{% endblock %}
+{% block content %}
+<h1>📅 Calendar</h1>
+<p style="color: var(--text-dim); margin-bottom: 1rem">
+  All logged days, most recent first.
+</p>
+<div id="days-list"><p class="empty-state">Loading…</p></div>
+{% endblock %}
+{% block scripts %}
+<script>
+  async function loadCalendar() {
+    const res = await fetch("/api/days");
+    const days = await res.json();
+    const el = document.getElementById("days-list");
+    if (!days || days.length === 0) {
+      el.innerHTML = '<p class="empty-state">No days logged yet.</p>';
+      return;
+    }
+    const sorted = [...days].sort((a, b) => b.date.localeCompare(a.date));
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Fetch today's report for highlighting
+    el.innerHTML = sorted
+      .map((d) => {
+        const isToday = d.date === today;
+        const todayBadge = isToday
+          ? ' <span class="badge badge-ate">today</span>'
+          : "";
+        const entriesStr = `${d.items_count} entr${d.items_count === 1 ? "y" : "ies"}`;
+        return `<a href="/calendar/${d.date}" class="day-link">
+      <span class="day-date">${d.date}${todayBadge}</span>
+      <span class="day-meta">${entriesStr}</span>
+    </a>`;
+      })
+      .join("");
+  }
+
+  loadCalendar();
+</script>
+{% endblock %}
