@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}Nutrition Tracker{% endblock %}
+{% block content %}
+  <div style="display:flex;align-items:baseline;gap:0.75rem;margin-bottom:1rem;">
+    <h1>Today</h1>
+    <span id="today-date" style="color:var(--text-dim);font-size:1rem;"></span>
+  </div>
+
+  <div class="card" id="stats-card">
+    <h2>📊 Nutrition Summary</h2>
+    <div id="stats-content">
+      <p class="empty-state">Loading…</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>🍽 Log Food</h2>
+    <form id="log-food-form">
+      <div class="form-row">
+        <div style="flex:2;min-width:160px;">
+          <label for="food-alias">Food / Recipe name</label>
+          <input type="text" id="food-alias" placeholder="e.g. chickpeas" list="food-options" autocomplete="off" required>
+          <datalist id="food-options"></datalist>
+        </div>
+        <div style="flex:1;min-width:110px;">
+          <label for="food-qty">Quantity</label>
+          <input type="text" id="food-qty" placeholder="e.g. 200g" required>
+        </div>
+        <div style="display:flex;align-items:flex-end;">
+          <button type="submit">Log</button>
+        </div>
+      </div>
+      <div id="food-msg"></div>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>🏃 Log Exercise</h2>
+    <form id="log-exercise-form">
+      <div class="form-row">
+        <div style="flex:2;min-width:160px;">
+          <label for="exercise-alias">Exercise name</label>
+          <input type="text" id="exercise-alias" placeholder="e.g. running" list="exercise-options" autocomplete="off" required>
+          <datalist id="exercise-options"></datalist>
+        </div>
+        <div style="flex:1;min-width:110px;">
+          <label for="exercise-qty">Duration / Quantity</label>
+          <input type="text" id="exercise-qty" placeholder="e.g. 30 min" required>
+        </div>
+        <div style="display:flex;align-items:flex-end;">
+          <button type="submit">Log</button>
+        </div>
+      </div>
+      <div id="exercise-msg"></div>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>📋 Today's Log</h2>
+    <div id="today-log">
+      <p class="empty-state">Loading…</p>
+    </div>
+  </div>
+{% endblock %}
+{% block scripts %}
+<script>
+const todayDate = new Date().toISOString().slice(0, 10);
+document.getElementById('today-date').textContent = new Date().toLocaleDateString(undefined, { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+
+async function loadDay() {
+  const res = await fetch(`/api/days/${todayDate}`);
+  const data = await res.json();
+
+  const statsEl = document.getElementById('stats-content');
+  const intake = data.report && data.report.intake ? data.report.intake : [];
+
+  if (intake.length === 0) {
+    statsEl.innerHTML = '<p class="empty-state">No food logged yet today.</p>';
+  } else {
+    const priority = ['calories','protein','fat','carbohydrates','carbs','fiber','sugar'];
+    const sorted = [...intake].sort((a,b) => {
+      const ai = priority.indexOf(a.name), bi = priority.indexOf(b.name);
+      if (ai>=0 && bi>=0) return ai-bi;
+      if (ai>=0) return -1;
+      if (bi>=0) return 1;
+      return a.name.localeCompare(b.name);
+    });
+    statsEl.innerHTML = `<div class="stats-grid">${sorted.map(p =>
+      `<div class="stat-card"><div class="stat-value">${fmt(p.value.amount, p.value.unit)}</div><div class="stat-label">${p.name}</div></div>`
+    ).join('')}</div>`;
+  }
+
+  const logEl = document.getElementById('today-log');
+  const items = data.items || [];
+  if (items.length === 0) {
+    logEl.innerHTML = '<p class="empty-state">Nothing logged yet.</p>';
+  } else {
+    logEl.innerHTML = `<ul class="log-list">${items.map(item => {
+      if (item.type === 'ate') {
+        return `<li class="log-item"><span class="badge badge-ate">ate</span><span class="alias">${item.alias}</span><span class="qty">${fmt(item.quantity.amount, item.quantity.unit)}</span></li>`;
+      } else if (item.type === 'exercised') {
+        return `<li class="log-item"><span class="badge badge-exercised">exercised</span><span class="alias">${item.alias}</span><span class="qty">${fmt(item.quantity.amount, item.quantity.unit)}</span></li>`;
+      } else {
+        return `<li class="log-item"><span class="badge badge-meal">meal</span><span class="alias">${item.label}</span></li>`;
+      }
+    }).join('')}</ul>`;
+  }
+}
+
+async function loadAutocomplete() {
+  const [aliasRes, exRes] = await Promise.all([
+    fetch('/api/ingredients/aliases'),
+    fetch('/api/exercises/aliases')
+  ]);
+  const [foodAliases, exAliases] = await Promise.all([aliasRes.json(), exRes.json()]);
+
+  const foodOptions = document.getElementById('food-options');
+  const exOptions   = document.getElementById('exercise-options');
+  foodOptions.innerHTML = (foodAliases || []).map(a => `<option value="${a}">`).join('');
+  exOptions.innerHTML   = (exAliases  || []).map(a => `<option value="${a}">`).join('');
+}
+
+function showMsg(id, msg, isError) {
+  const el = document.getElementById(id);
+  el.innerHTML = `<div class="alert ${isError ? 'alert-error' : 'alert-success'}">${msg}</div>`;
+  setTimeout(() => el.innerHTML = '', 3000);
+}
+
+document.getElementById('log-food-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const alias = document.getElementById('food-alias').value.trim();
+  const qty   = document.getElementById('food-qty').value.trim();
+  const res = await fetch(`/api/days/${todayDate}/ate`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ alias, quantity: qty })
+  });
+  if (res.ok) {
+    showMsg('food-msg', `Logged ${alias} (${qty})`, false);
+    document.getElementById('food-alias').value = '';
+    document.getElementById('food-qty').value = '';
+    loadDay();
+  } else {
+    const err = await res.json();
+    showMsg('food-msg', err.error || 'Error logging food', true);
+  }
+});
+
+document.getElementById('log-exercise-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const alias = document.getElementById('exercise-alias').value.trim();
+  const qty   = document.getElementById('exercise-qty').value.trim();
+  const res = await fetch(`/api/days/${todayDate}/exercised`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ alias, quantity: qty })
+  });
+  if (res.ok) {
+    showMsg('exercise-msg', `Logged ${alias} (${qty})`, false);
+    document.getElementById('exercise-alias').value = '';
+    document.getElementById('exercise-qty').value = '';
+    loadDay();
+  } else {
+    const err = await res.json();
+    showMsg('exercise-msg', err.error || 'Error logging exercise', true);
+  }
+});
+
+loadDay();
+loadAutocomplete();
+</script>
+{% endblock %}

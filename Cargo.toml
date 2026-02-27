@@ -18,7 +18,7 @@ path = "src/lib.rs"
 
 [features]
 default = ["runtime"]
-runtime = ["dep:tokio", "dep:axum", "dep:async-openai", "dep:async-trait"]
+runtime = ["dep:tokio", "dep:axum", "dep:async-openai", "dep:async-trait", "dep:minijinja"]
 
 [dependencies]
 async-openai = { version = "0.32.3", features = ["chat-completion"], optional = true }
@@ -31,6 +31,7 @@ logos = "0.16.0"
 schemars = "1.2.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
+minijinja = { version = "2", optional = true }
 tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread"], optional = true }
 
 [dev-dependencies]
