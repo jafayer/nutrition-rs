@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}{{ date }} – Nutrition Tracker{% endblock %}
+{% block content %}
+<div style="margin-bottom:1rem;">
+  <a href="/calendar" style="color:var(--text-dim);font-size:0.9rem;">← Back to Calendar</a>
+</div>
+<h1>📅 {{ date }}</h1>
+
+{% if intake | length > 0 %}
+<div class="card">
+  <h2>📊 Nutrition Summary</h2>
+  <div class="stats-grid">
+    {% for p in intake %}
+    <div class="stat-card">
+      <div class="stat-value">{{ p.value.amount | fmt_num }}{% if p.value.unit %} {{ p.value.unit }}{% endif %}</div>
+      <div class="stat-label">{{ p.name }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% if exercise | length > 0 %}
+  <p style="color:var(--text-dim);font-size:0.85rem;margin-top:0.75rem;">
+    Exercise burned:
+    {% for p in exercise %}{{ p.value.amount | fmt_num }}{% if p.value.unit %} {{ p.value.unit }}{% endif %} {{ p.name }}{% if not loop.last %}, {% endif %}{% endfor %}
+  </p>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>📋 Log</h2>
+  {% if items | length > 0 %}
+  <ul class="log-list">
+    {% for item in items %}
+      {% if item.type == "meal" %}
+      <li class="log-item" style="padding:0.3rem 0;">
+        <span class="badge badge-meal">{{ item.label }}</span>
+      </li>
+      {% elif item.type == "ate" %}
+      <li class="log-item">
+        <span class="badge badge-ate">ate</span>
+        <span class="alias">{{ item.alias }}</span>
+        <span class="qty">{{ item.quantity.amount | fmt_num }}{% if item.quantity.unit %} {{ item.quantity.unit }}{% endif %}</span>
+      </li>
+      {% elif item.type == "exercised" %}
+      <li class="log-item">
+        <span class="badge badge-exercised">exercised</span>
+        <span class="alias">{{ item.alias }}</span>
+        <span class="qty">{{ item.quantity.amount | fmt_num }}{% if item.quantity.unit %} {{ item.quantity.unit }}{% endif %}</span>
+      </li>
+      {% endif %}
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty-state">No entries for this day.</p>
+  {% endif %}
+</div>
+{% endblock %}

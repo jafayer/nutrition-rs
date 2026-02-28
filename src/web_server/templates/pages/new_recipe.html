@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}New Recipe - Nutrition Tracker{% endblock %}
+{% block title %}New Recipe – Nutrition Tracker{% endblock %}
 {% block content %}
   <h1>📖 New Recipe</h1>
   <p style="color:var(--text-dim);margin-bottom:1rem;">Combine ingredients into a named recipe.</p>
@@ -39,7 +39,10 @@
             <button type="button" class="secondary remove-btn" title="Remove">✕</button>
           </div>
         </div>
-        <datalist id="ing-options"></datalist>
+        <!-- Ingredient aliases rendered server-side; no JS fetch needed -->
+        <datalist id="ing-options">
+          {% for alias in food_aliases %}<option value="{{ alias }}">{% endfor %}
+        </datalist>
         <button type="button" class="secondary" id="add-ing" style="margin-top:0.5rem;">+ Add ingredient</button>
       </div>
 
@@ -51,16 +54,6 @@
 
 {% block scripts %}
 <script>
-async function loadIngredientOptions() {
-  const res = await fetch('/api/ingredients');
-  const ings = await res.json();
-  const opts = document.getElementById('ing-options');
-  const aliases = new Set();
-  (ings||[]).forEach(i => (i.aliases||[]).forEach(a => aliases.add(a)));
-  opts.innerHTML = [...aliases].map(a => `<option value="${a}">`).join('');
-}
-loadIngredientOptions();
-
 addRemoveHandlers();
 
 document.getElementById('add-alias').onclick = () => {
