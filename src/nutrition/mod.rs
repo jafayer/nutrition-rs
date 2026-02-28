@@ -203,6 +203,12 @@ fn compute_scale(ingredient_quantities: &[Quantity], requested: &Quantity) -> f6
     let base_unit = base.unit.as_deref().unwrap_or("");
     let req_unit = requested.unit.as_deref().unwrap_or("");
 
+    // If requested quantity is unitless, treat it as a multiplier of the full serving.
+    // For example, @ate "aldi mini wheats"(1) means 1 full serving, not 1 biscuit.
+    if req_unit.is_empty() {
+        return requested.amount;
+    }
+
     if base_unit == req_unit {
         // Same unit – straightforward ratio.
         return requested.amount / base.amount;
