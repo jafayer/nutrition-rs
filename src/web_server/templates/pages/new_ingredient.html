@@ -52,7 +52,8 @@
 
 {% block scripts %}
 <script>
-addRemoveHandlers();
+document.addEventListener('DOMContentLoaded', () => {
+  addRemoveHandlers();
 
 document.getElementById('add-alias').onclick = () => {
   const item = document.createElement('div');
@@ -110,6 +111,7 @@ document.getElementById('ing-form').addEventListener('submit', async e => {
     const err = await res.json();
     msgEl.innerHTML = `<div class="alert alert-error">${err.error || 'Error saving ingredient'}</div>`;
   }
+});
 });
 </script>
 {% endblock %}

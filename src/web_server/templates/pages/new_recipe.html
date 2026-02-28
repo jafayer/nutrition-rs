@@ -39,10 +39,7 @@
             <button type="button" class="secondary remove-btn" title="Remove">✕</button>
           </div>
         </div>
-        <!-- Ingredient aliases rendered server-side; no JS fetch needed -->
-        <datalist id="ing-options">
-          {% for alias in food_aliases %}<option value="{{ alias }}">{% endfor %}
-        </datalist>
+        <datalist id="ing-options"></datalist>
         <button type="button" class="secondary" id="add-ing" style="margin-top:0.5rem;">+ Add ingredient</button>
       </div>
 
@@ -54,7 +51,9 @@
 
 {% block scripts %}
 <script>
-addRemoveHandlers();
+document.addEventListener('DOMContentLoaded', () => {
+  fetchAndPopulateAliases('ing-options', '/api/aliases/foods');
+  addRemoveHandlers();
 
 document.getElementById('add-alias').onclick = () => {
   const item = document.createElement('div'); item.className = 'repeatable-item';
@@ -104,6 +103,7 @@ document.getElementById('recipe-form').addEventListener('submit', async e => {
     const err = await res.json();
     msgEl.innerHTML = `<div class="alert alert-error">${err.error || 'Error saving recipe'}</div>`;
   }
+});
 });
 </script>
 {% endblock %}

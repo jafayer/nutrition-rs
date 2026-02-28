@@ -18,3 +18,32 @@ function addRemoveHandlers() {
     };
   });
 }
+
+// Client-side cache for aliases to avoid repeated API calls
+const aliasCache = {};
+
+// Fetch aliases from API and populate datalist elements
+async function fetchAndPopulateAliases(datalistId, endpoint) {
+  const datalist = document.getElementById(datalistId);
+  if (!datalist) return;
+
+  // Check cache first
+  if (aliasCache[endpoint]) {
+    populateDatalist(datalist, aliasCache[endpoint]);
+    return;
+  }
+
+  try {
+    const response = await fetch(endpoint);
+    if (!response.ok) return;
+    const aliases = await response.json();
+    aliasCache[endpoint] = aliases;
+    populateDatalist(datalist, aliases);
+  } catch (err) {
+    console.error(`Failed to fetch aliases from ${endpoint}:`, err);
+  }
+}
+
+function populateDatalist(datalist, aliases) {
+  datalist.innerHTML = aliases.map(alias => `<option value="${alias}">`).join('');
+}

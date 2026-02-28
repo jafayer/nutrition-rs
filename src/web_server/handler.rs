@@ -35,7 +35,7 @@ pub struct AppState {
     /// Serialises all file-write operations to prevent concurrent corruption.
     pub write_lock: Arc<tokio::sync::Mutex<()>>,
     /// RwLock: concurrent reads never block each other; writes are exclusive.
-    pub cache: Arc<tokio::sync::RwLock<Option<Document>>>,
+    pub cache: Arc<tokio::sync::RwLock<Option<Arc<Document>>>>,
     /// Minijinja environment shared across all page handlers.
     pub env: Arc<minijinja::Environment<'static>>,
 }
@@ -48,22 +48,25 @@ pub struct AppState {
 /// calls never take an exclusive lock.  Only when the cache is cold does it
 /// fall through to the write lock (which re-checks after acquiring to avoid
 /// a double-parse under concurrent cold requests).
-async fn get_doc(state: &AppState) -> Result<Document, (StatusCode, String)> {
+async fn get_doc(state: &AppState) -> Result<Arc<Document>, (StatusCode, String)> {
     // Fast path – read lock, returns immediately when cache is warm.
     {
         let r = state.cache.read().await;
         if let Some(doc) = r.as_ref() {
-            return Ok(doc.clone());
+            return Ok(Arc::clone(doc));
         }
     }
     // Slow path – write lock + double-check.
+    // log that we are loading the file due to a cache miss, for observability.
+    eprintln!("Cache miss – loading file: {}", state.file_path);
     let mut w = state.cache.write().await;
     if let Some(doc) = w.as_ref() {
-        return Ok(doc.clone());
+        return Ok(Arc::clone(doc));
     }
     let doc = load_tree(Some(state.file_path.as_str()))
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
-    *w = Some(doc.clone());
+    let doc = Arc::new(doc);
+    *w = Some(Arc::clone(&doc));
     Ok(doc)
 }
 
@@ -72,7 +75,7 @@ async fn get_doc(state: &AppState) -> Result<Document, (StatusCode, String)> {
 async fn reload_cache(state: &AppState) {
     let mut w = state.cache.write().await;
     match load_tree(Some(state.file_path.as_str())) {
-        Ok(doc) => *w = Some(doc),
+        Ok(doc) => *w = Some(Arc::new(doc)),
         Err(_) => *w = None, // fall back to cold reload on next request
     }
 }
@@ -739,6 +742,26 @@ async fn api_get_day(
     }
 }
 
+// ── API: Aliases ──────────────────────────────────────────────────────
+
+async fn api_list_food_aliases(State(state): State<AppState>) -> Response {
+    let doc = match get_doc(&state).await {
+        Ok(d) => d,
+        Err((s, m)) => return (s, Json(serde_json::json!({ "error": m }))).into_response(),
+    };
+    let aliases = all_food_aliases(&doc);
+    (StatusCode::OK, Json(aliases)).into_response()
+}
+
+async fn api_list_exercise_aliases(State(state): State<AppState>) -> Response {
+    let doc = match get_doc(&state).await {
+        Ok(d) => d,
+        Err((s, m)) => return (s, Json(serde_json::json!({ "error": m }))).into_response(),
+    };
+    let aliases = all_exercise_aliases(&doc);
+    (StatusCode::OK, Json(aliases)).into_response()
+}
+
 async fn api_log_ate(
     State(state): State<AppState>,
     Path(date): Path<String>,
@@ -839,8 +862,6 @@ async fn page_home(State(state): State<AppState>) -> Response {
     } else {
         (vec![], vec![])
     };
-    let food_aliases = all_food_aliases(&doc);
-    let exercise_aliases = all_exercise_aliases(&doc);
     render_page(
         &state,
         "pages/home.html",
@@ -849,18 +870,21 @@ async fn page_home(State(state): State<AppState>) -> Response {
             today_date => today,
             items => items,
             intake => intake,
-            food_aliases => food_aliases,
-            exercise_aliases => exercise_aliases,
         },
     )
 }
 
-async fn page_calendar(State(state): State<AppState>) -> Response {
+async fn page_calendar(
+    State(state): State<AppState>,
+    Query(params): Query<QueryPageParams>,
+) -> Response {
     let doc = match get_doc(&state).await {
         Ok(d) => d,
         Err((s, m)) => return (s, m).into_response(),
     };
     let today = today_utc();
+    let offset = params.offset;
+    let limit = params.limit;
     let mut days: Vec<serde_json::Value> = doc
         .items
         .iter()
@@ -880,12 +904,17 @@ async fn page_calendar(State(state): State<AppState>) -> Response {
     days.sort_by(|a, b| {
         b["date"].as_str().unwrap_or("").cmp(a["date"].as_str().unwrap_or(""))
     });
+    let total = days.len();
+    let days: Vec<_> = days.into_iter().skip(offset).take(limit).collect();
     render_page(
         &state,
         "pages/calendar.html",
         context! {
             active => "calendar",
             days => days,
+            total => total,
+            offset => offset,
+            limit => limit,
         },
     )
 }
@@ -1045,7 +1074,6 @@ async fn page_query(
             showing_from => showing_from,
             showing_to_food => showing_to_food,
             showing_to_ex => showing_to_ex,
-            food_aliases => all_food_aliases(&doc),
         },
     )
 }
@@ -1059,16 +1087,11 @@ async fn page_new_ingredient(State(state): State<AppState>) -> Response {
 }
 
 async fn page_new_recipe(State(state): State<AppState>) -> Response {
-    let food_aliases = match get_doc(&state).await {
-        Ok(doc) => all_food_aliases(&doc),
-        Err(_) => vec![],
-    };
     render_page(
         &state,
         "pages/new_recipe.html",
         context! {
             active => "new_recipe",
-            food_aliases => food_aliases,
         },
     )
 }
@@ -1146,11 +1169,23 @@ pub async fn run_server(
     file_path: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let state = AppState {
-        file_path: Arc::new(file_path),
+        file_path: Arc::new(file_path.clone()),
         write_lock: Arc::new(tokio::sync::Mutex::new(())),
         cache: Arc::new(tokio::sync::RwLock::new(None)),
         env: Arc::new(build_env()),
     };
+
+    // Preload the document tree into cache before accepting requests
+    println!("Loading document tree...");
+    match load_tree(Some(&file_path)) {
+        Ok(doc) => {
+            *state.cache.write().await = Some(Arc::new(doc));
+            println!("Document tree loaded successfully");
+        }
+        Err(e) => {
+            eprintln!("Warning: Failed to preload document tree: {}", e);
+        }
+    }
 
     let app = Router::new()
         // Web UI
@@ -1187,6 +1222,9 @@ pub async fn run_server(
         .route("/api/days/{date}", get(api_get_day))
         .route("/api/days/{date}/ate", post(api_log_ate))
         .route("/api/days/{date}/exercised", post(api_log_exercised))
+        // API: aliases
+        .route("/api/aliases/foods", get(api_list_food_aliases))
+        .route("/api/aliases/exercises", get(api_list_exercise_aliases))
         .with_state(state);
 
     let ip = host

@@ -10,9 +10,7 @@
       <input type="text" name="q" id="q-input" value="{{ q }}"
              placeholder="Search foods, recipes, exercises…"
              list="food-ac" autocomplete="off" style="flex:3;">
-      <datalist id="food-ac">
-        {% for alias in food_aliases %}<option value="{{ alias }}">{% endfor %}
-      </datalist>
+      <datalist id="food-ac"></datalist>
       <input type="hidden" name="offset" value="0">
       <input type="hidden" name="limit"  value="{{ limit }}">
       <button type="submit">Search</button>
@@ -131,6 +129,11 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  fetchAndPopulateAliases('food-ac', '/api/aliases/foods');
+});
+</script>
 <script>
 function renderNutrition(report) {
   if (!report || !report.properties || report.properties.length === 0)
