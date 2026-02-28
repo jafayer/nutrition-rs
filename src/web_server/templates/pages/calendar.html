@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Calendar – Nutrition Tracker{% endblock %}
+{% block content %}
+<h1>📅 Calendar</h1>
+<p style="color:var(--text-dim);margin-bottom:1rem;">All logged days, most recent first.</p>
+{% if days | length > 0 %}
+<div id="days-list">
+  {% for day in days %}
+  <a href="/calendar/{{ day.date }}" class="day-link">
+    <span class="day-date">
+      {{ day.date }}
+      {% if day.is_today %}<span class="badge badge-ate" style="margin-left:0.4rem;">today</span>{% endif %}
+    </span>
+    <span class="day-meta">{{ day.items_count }} entr{{ "y" if day.items_count == 1 else "ies" }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="empty-state">No days logged yet.</p>
+{% endif %}
+{% endblock %}

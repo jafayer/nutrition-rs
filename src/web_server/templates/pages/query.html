@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}Search – Nutrition Tracker{% endblock %}
+{% block content %}
+<h1>🔍 Search</h1>
+
+<!-- Search form – submits as GET /query?q=... so the server SSR-renders results -->
+<div class="card">
+  <form id="search-form" method="get" action="/query">
+    <div class="form-row">
+      <input type="text" name="q" id="q-input" value="{{ q }}"
+             placeholder="Search foods, recipes, exercises…"
+             list="food-ac" autocomplete="off" style="flex:3;">
+      <datalist id="food-ac"></datalist>
+      <input type="hidden" name="offset" value="0">
+      <input type="hidden" name="limit"  value="{{ limit }}">
+      <button type="submit">Search</button>
+      {% if q %}<a href="/query" class="btn secondary" style="margin-left:0.25rem;">✕ Clear</a>{% endif %}
+    </div>
+  </form>
+</div>
+
+<!-- Detail card shown when a food / exercise is clicked (JS-populated) -->
+<div id="detail-card" style="display:none;" class="card"></div>
+
+<!-- ── Foods & Recipes ──────────────────────────────────────────────────── -->
+<div class="card">
+  <h2>
+    🥘 Foods &amp; Recipes
+    <span style="color:var(--text-dim);font-size:0.85rem;font-weight:400;margin-left:0.5rem;">
+      {% if q %}
+        {{ food_total }} result{{ "s" if food_total != 1 else "" }} for "{{ q }}"
+      {% else %}
+        {{ food_total }} total
+      {% endif %}
+    </span>
+  </h2>
+
+  {% if foods | length > 0 %}
+  <ul class="log-list" id="foods-list">
+    {% for food in foods %}
+    <li class="log-item">
+      {% if food.item_type == "recipe" %}
+        <span class="badge badge-meal" style="margin-right:0.3rem;">recipe</span>
+      {% endif %}
+      <a href="#" class="alias food-link" data-alias="{{ food.primary }}">{{ food.primary }}</a>
+      {% if food.aliases_rest | length > 0 %}
+        <span class="qty">{{ food.aliases_rest | join(", ") }}</span>
+      {% endif %}
+      {% if food.quantity %}
+        <span class="cal">{{ food.quantity.amount | fmt_num }}{% if food.quantity.unit %} {{ food.quantity.unit }}{% endif %}</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+
+  {% if has_prev or has_next_food %}
+  <div class="pagination">
+    {% if has_prev %}
+      <a href="/query?q={{ q }}&offset={{ prev_offset }}&limit={{ limit }}" class="btn secondary">← Prev</a>
+    {% else %}
+      <button class="secondary" disabled>← Prev</button>
+    {% endif %}
+    <span class="page-info">{{ showing_from }}–{{ showing_to_food }} of {{ food_total }}</span>
+    {% if has_next_food %}
+      <a href="/query?q={{ q }}&offset={{ next_offset }}&limit={{ limit }}" class="btn secondary">Next →</a>
+    {% else %}
+      <button class="secondary" disabled>Next →</button>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% else %}
+  <p class="empty-state">
+    {% if q %}No foods or recipes matching "{{ q }}".{% else %}No foods defined yet.{% endif %}
+  </p>
+  {% endif %}
+</div>
+
+<!-- ── Exercises ─────────────────────────────────────────────────────────── -->
+<div class="card">
+  <h2>
+    🏃 Exercises
+    <span style="color:var(--text-dim);font-size:0.85rem;font-weight:400;margin-left:0.5rem;">
+      {% if q %}
+        {{ ex_total }} result{{ "s" if ex_total != 1 else "" }} for "{{ q }}"
+      {% else %}
+        {{ ex_total }} total
+      {% endif %}
+    </span>
+  </h2>
+
+  {% if exercises | length > 0 %}
+  <ul class="log-list" id="ex-list">
+    {% for ex in exercises %}
+    <li class="log-item">
+      <a href="#" class="alias ex-link" data-alias="{{ ex.primary }}">{{ ex.primary }}</a>
+      {% if ex.aliases_rest | length > 0 %}
+        <span class="qty">{{ ex.aliases_rest | join(", ") }}</span>
+      {% endif %}
+      {% if ex.quantity %}
+        <span class="cal">{{ ex.quantity.amount | fmt_num }}{% if ex.quantity.unit %} {{ ex.quantity.unit }}{% endif %}</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+
+  {% if has_prev or has_next_ex %}
+  <div class="pagination">
+    {% if has_prev %}
+      <a href="/query?q={{ q }}&offset={{ prev_offset }}&limit={{ limit }}" class="btn secondary">← Prev</a>
+    {% else %}
+      <button class="secondary" disabled>← Prev</button>
+    {% endif %}
+    <span class="page-info">{{ showing_from }}–{{ showing_to_ex }} of {{ ex_total }}</span>
+    {% if has_next_ex %}
+      <a href="/query?q={{ q }}&offset={{ next_offset }}&limit={{ limit }}" class="btn secondary">Next →</a>
+    {% else %}
+      <button class="secondary" disabled>Next →</button>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% else %}
+  <p class="empty-state">
+    {% if q %}No exercises matching "{{ q }}".{% else %}No exercises defined yet.{% endif %}
+  </p>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  fetchAndPopulateAliases('food-ac', '/api/aliases/foods');
+});
+</script>
+<script>
+function renderNutrition(report) {
+  if (!report || !report.properties || report.properties.length === 0)
+    return '<em>No nutritional data.</em>';
+  const priority = ['calories','protein','fat','carbohydrates','carbs','fiber','sugar','sodium'];
+  const sorted = [...report.properties].sort((a,b) => {
+    const ai = priority.indexOf(a.name), bi = priority.indexOf(b.name);
+    if (ai>=0 && bi>=0) return ai-bi;
+    if (ai>=0) return -1; if (bi>=0) return 1;
+    return a.name.localeCompare(b.name);
+  });
+  return `<div class="stats-grid">${sorted.map(p =>
+    `<div class="stat-card"><div class="stat-value">${fmt(p.value.amount, p.value.unit)}</div><div class="stat-label">${p.name}</div></div>`
+  ).join('')}</div><p style="color:var(--text-dim);font-size:0.8rem;margin-top:0.5rem;">per ${fmt(report.quantity.amount, report.quantity.unit)}</p>`;
+}
+
+async function showFoodDetail(alias) {
+  const card = document.getElementById('detail-card');
+  card.innerHTML = '<p class="empty-state">Loading…</p>';
+  card.style.display = '';
+
+  let res = await fetch(`/api/ingredients/${encodeURIComponent(alias)}`);
+  if (res.ok) {
+    const data = await res.json();
+    const qtyStr = data.ingredient.quantities.map(q => fmt(q.amount, q.unit)).join(' / ');
+    card.innerHTML = `<h3>${data.ingredient.aliases.join(' / ')} <span style="font-weight:400;color:var(--text-dim)">(${qtyStr})</span></h3>${renderNutrition(data.nutrition)}`;
+    return;
+  }
+  res = await fetch(`/api/recipes/${encodeURIComponent(alias)}`);
+  if (res.ok) {
+    const data = await res.json();
+    const qtyStr = data.recipe.quantities.map(q => fmt(q.amount, q.unit)).join(' / ');
+    card.innerHTML = `<h3>${data.recipe.aliases.join(' / ')} <span style="font-weight:400;color:var(--text-dim)">(${qtyStr})</span></h3>${renderNutrition(data.nutrition)}`;
+    return;
+  }
+  card.innerHTML = `<div class="alert alert-error">No ingredient or recipe named "${alias}" found.</div>`;
+}
+
+async function showExerciseDetail(alias) {
+  const card = document.getElementById('detail-card');
+  card.innerHTML = '<p class="empty-state">Loading…</p>';
+  card.style.display = '';
+  const res = await fetch(`/api/exercises/${encodeURIComponent(alias)}`);
+  if (res.ok) {
+    const data = await res.json();
+    const qtyStr = data.exercise.quantities.map(q => fmt(q.amount, q.unit)).join(' / ');
+    const propsHtml = data.exercise.properties.length > 0
+      ? `<div class="stats-grid">${data.exercise.properties.map(p =>
+          `<div class="stat-card"><div class="stat-value">${fmt(p.value.amount, p.value.unit)}</div><div class="stat-label">${p.name}</div></div>`
+        ).join('')}</div><p style="color:var(--text-dim);font-size:0.8rem;margin-top:0.5rem;">per ${qtyStr}</p>`
+      : '<em>No properties defined.</em>';
+    card.innerHTML = `<h3>${data.exercise.aliases.join(' / ')}</h3>${propsHtml}`;
+  } else {
+    card.innerHTML = `<div class="alert alert-error">No exercise named "${alias}" found.</div>`;
+  }
+}
+
+document.querySelectorAll('.food-link').forEach(el =>
+  el.addEventListener('click', e => { e.preventDefault(); showFoodDetail(e.currentTarget.dataset.alias); })
+);
+document.querySelectorAll('.ex-link').forEach(el =>
+  el.addEventListener('click', e => { e.preventDefault(); showExerciseDetail(e.currentTarget.dataset.alias); })
+);
+</script>
+{% endblock %}

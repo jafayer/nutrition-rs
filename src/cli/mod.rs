@@ -55,6 +55,14 @@ pub enum Commands {
             default_value_t = 8080
         )]
         port: u16,
+
+        #[arg(
+            short = 'H',
+            long,
+            help = "Host to bind to",
+            default_value = "127.0.0.1"
+        )]
+        host: String
     },
 
     /// Display nutritional data for a named ingredient or recipe.
@@ -231,8 +239,9 @@ pub async fn run_cli(cli: Cli) {
             }
         },
 
-        Commands::Serve { port } => {
-            crate::web_server::handler::run_server(port).await.unwrap();
+        Commands::Serve { port, host } => {
+            let file = require_file(&cli.file);
+            crate::web_server::handler::run_server(host, port, file).await.unwrap();
         }
 
         Commands::Query { name, quantity, json } => {
