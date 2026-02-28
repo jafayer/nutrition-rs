@@ -127,16 +127,52 @@ fn best_alias_score(aliases: &[String], query: &str) -> Option<usize> {
 
 // ── Date helper (no external crate required) ──────────────────────────────────
 
-/// Current date in `YYYY-MM-DD` format, derived from the UTC Unix timestamp.
-fn today_utc() -> String {
+/// Current date in `YYYY-MM-DD` format, using the system's local timezone.
+fn today_local() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
+    
+    // Get current Unix timestamp
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs();
+        .as_secs() as i64;
+    
+    // Get local timezone offset by comparing local time with UTC
+    // This is a portable way to get timezone offset
+    let local_offset = {
+        use std::process::Command;
+        // Use the 'date' command which is available on Unix-like systems
+        let output = Command::new("date")
+            .arg("+%z")
+            .output()
+            .ok();
+        
+        if let Some(output) = output {
+            if let Ok(offset_str) = String::from_utf8(output.stdout) {
+                let offset_str = offset_str.trim();
+                // Parse "+1100" or "-0500" format
+                if offset_str.len() >= 5 {
+                    let sign = if offset_str.starts_with('-') { -1 } else { 1 };
+                    let hours: i64 = offset_str[1..3].parse().unwrap_or(0);
+                    let mins: i64 = offset_str[3..5].parse().unwrap_or(0);
+                    sign * (hours * 3600 + mins * 60)
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        } else {
+            0
+        }
+    };
+    
+    // Adjust for local timezone
+    let local_secs = (secs + local_offset) as u64;
+    
     // Civil-calendar algorithm (Gregorian) from Howard Hinnant
     // https://howardhinnant.github.io/date_algorithms.html#civil_from_days
-    let z = (secs / 86400) as u32 + 719_468;
+    let z = (local_secs / 86400) as u32 + 719_468;
     let era = z / 146_097;
     let doe = z - era * 146_097;
     let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
@@ -847,7 +883,7 @@ async fn page_home(State(state): State<AppState>) -> Response {
         Ok(d) => d,
         Err((s, m)) => return (s, m).into_response(),
     };
-    let today = today_utc();
+    let today = today_local();
     let day = doc.items.iter().find_map(|item| {
         if let Item::Day(d) = item {
             if d.date == today {
@@ -882,7 +918,7 @@ async fn page_calendar(
         Ok(d) => d,
         Err((s, m)) => return (s, m).into_response(),
     };
-    let today = today_utc();
+    let today = today_local();
     let offset = params.offset;
     let limit = params.limit;
     let mut days: Vec<serde_json::Value> = doc
