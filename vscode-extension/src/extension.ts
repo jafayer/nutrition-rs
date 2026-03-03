@@ -10,7 +10,7 @@ import {
 
 let client: LanguageClient | undefined;
 
-type DeclarationKind = 'ingredient' | 'food' | 'recipe' | 'day';
+type DeclarationKind = 'ingredient' | 'food' | 'recipe' | 'exercise' | 'day';
 
 interface DeclMatch {
   label: string;
@@ -78,6 +78,15 @@ const DECL_CONFIGS: DeclConfig[] = [
     extractAliases: match => extractQuotedStrings(match[1] ?? ''),
     placeholder: 'Find recipe...',
     emptyMessage: 'No recipes found in this file or imported files'
+  },
+  {
+    kind: 'exercise',
+    commandId: 'nutrition.findExercise',
+    title: 'Find Exercise',
+    regex: /@exercise\s*(?:\([^)]*\))*\s*((?:"[^"]*"\s*)+)/,
+    extractAliases: match => extractQuotedStrings(match[1] ?? ''),
+    placeholder: 'Find exercise...',
+    emptyMessage: 'No exercises found in this file or imported files'
   },
   {
     kind: 'day',
@@ -159,6 +168,34 @@ function parseDeclarationsFromText(text: string, uri: vscode.Uri, config: DeclCo
   }
 
   return results;
+}
+
+function getDeclarationHeaderFromDocument(document: vscode.TextDocument, startLine: number): string {
+  let headerText = '';
+  let line = startLine;
+
+  while (line < document.lineCount) {
+    const lineText = document.lineAt(line).text;
+    headerText += (headerText.length > 0 ? '\n' : '') + lineText;
+
+    if (lineText.includes('{')) {
+      break;
+    }
+
+    const nextLine = line + 1;
+    if (nextLine >= document.lineCount) {
+      break;
+    }
+
+    const nextTrimmed = document.lineAt(nextLine).text.trimStart();
+    if (nextTrimmed.startsWith('@') || nextTrimmed.startsWith('}')) {
+      break;
+    }
+
+    line = nextLine;
+  }
+
+  return headerText;
 }
 
 function extractDeclarationAliasesFromLine(lineText: string, kind: DeclarationKind): string[] {
@@ -699,6 +736,309 @@ async function startLanguageClient(context: vscode.ExtensionContext): Promise<vo
   await client.start();
 }
 
+function registerCompletionProviders(context: vscode.ExtensionContext) {
+  function escapeSnippetText(value: string): string {
+    return value.replace(/[\\$}]/g, '\\$&');
+  }
+
+  function buildQuotedReferenceRange(document: vscode.TextDocument, position: vscode.Position): vscode.Range {
+    const line = document.lineAt(position.line).text;
+
+    // Replace from the opening quote before the cursor through the closing
+    // quote after the cursor (if present). This avoids leftover trailing
+    // quote/comma artifacts from partially typed text.
+    const quoteBefore = line.lastIndexOf('"', Math.max(0, position.character - 1));
+    const start = quoteBefore >= 0 ? quoteBefore : position.character;
+
+    const quoteAfter = line.indexOf('"', position.character);
+    const end = quoteAfter >= 0 ? quoteAfter + 1 : position.character;
+
+    return new vscode.Range(position.line, start, position.line, end);
+  }
+
+  // Extract word being completed at position
+  function getWordAtPosition(document: vscode.TextDocument, position: vscode.Position): string {
+    const line = document.lineAt(position.line).text;
+    let endPos = position.character;
+    let startPos = position.character;
+
+    // Move back to start of word (skip whitespace and stop at word boundary)
+    while (startPos > 0 && /[\w'".-]/.test(line[startPos - 1])) {
+      startPos--;
+    }
+
+    // Extract the word, handling quoted strings
+    const word = line.substring(startPos, endPos);
+    // Remove leading quote if present
+    return word.replace(/^["']/, '');
+  }
+
+  // Get all ingredients/recipes/foods accessible from this document
+  async function getAvailableAliases(document: vscode.TextDocument): Promise<Map<string, { kind: string; aliases: string[] }>> {
+    const result = new Map<string, { kind: string; aliases: string[] }>();
+    
+    const ingredientConfig = DECL_CONFIGS.find(c => c.kind === 'ingredient')!;
+    const foodConfig = DECL_CONFIGS.find(c => c.kind === 'food')!;
+    const recipeConfig = DECL_CONFIGS.find(c => c.kind === 'recipe')!;
+    const exerciseConfig = DECL_CONFIGS.find(c => c.kind === 'exercise');
+
+    const ingredients = await collectDeclarationsAcrossImports(document, ingredientConfig);
+    for (const decl of ingredients) {
+      for (const alias of decl.aliases) {
+        result.set(alias, { kind: 'ingredient', aliases: decl.aliases });
+      }
+    }
+
+    const foods = await collectDeclarationsAcrossImports(document, foodConfig);
+    for (const decl of foods) {
+      for (const alias of decl.aliases) {
+        result.set(alias, { kind: 'food', aliases: decl.aliases });
+      }
+    }
+
+    const recipes = await collectDeclarationsAcrossImports(document, recipeConfig);
+    for (const decl of recipes) {
+      for (const alias of decl.aliases) {
+        result.set(alias, { kind: 'recipe', aliases: decl.aliases });
+      }
+    }
+
+    if (exerciseConfig) {
+      const exercises = await collectDeclarationsAcrossImports(document, exerciseConfig);
+      for (const decl of exercises) {
+        for (const alias of decl.aliases) {
+          result.set(alias, { kind: 'exercise', aliases: decl.aliases });
+        }
+      }
+    }
+
+    return result;
+  }
+
+  // Completion provider for @recipe ingredient references
+  const recipeCompletionProvider = vscode.languages.registerCompletionItemProvider('nutrition', {
+    async provideCompletionItems(document: vscode.TextDocument, position: vscode.Position): Promise<vscode.CompletionItem[]> {
+      const line = document.lineAt(position.line).text;
+      const lineText = line.substring(0, position.character);
+
+      // Check if we're in a @recipe block and before the closing brace
+      let inRecipe = false;
+      for (let i = position.line; i >= 0; i--) {
+        const checkLine = document.lineAt(i).text;
+        if (/@recipe\b/.test(checkLine)) {
+          inRecipe = true;
+          break;
+        }
+        if (i < position.line && /^[^@]/.test(checkLine.trim()) && checkLine.includes('}')) {
+          break;
+        }
+      }
+
+      if (!inRecipe) {
+        return [];
+      }
+
+      // Must be inside quotes
+      const quoteCount = (lineText.match(/"/g) ?? []).length;
+      if (quoteCount % 2 === 0) {
+        return [];
+      }
+
+      // Get the word being typed
+      const word = getWordAtPosition(document, position);
+      const availableAliases = await getAvailableAliases(document);
+
+      // Filter to ingredients and recipes only
+      const candidates: vscode.CompletionItem[] = [];
+      const seen = new Set<string>();
+      for (const [label, info] of availableAliases) {
+        if ((info.kind === 'ingredient' || info.kind === 'recipe') && 
+            label.toLowerCase().includes(word.toLowerCase())) {
+          const dedupeKey = `${info.kind}:${label.toLowerCase()}`;
+          if (seen.has(dedupeKey)) {
+            continue;
+          }
+          seen.add(dedupeKey);
+          const item = new vscode.CompletionItem(label, vscode.CompletionItemKind.Variable);
+          item.detail = info.kind;
+          if (info.aliases.length > 1) {
+            item.documentation = `Also known as: ${info.aliases.slice(1).join(', ')}`;
+          }
+          
+          // Insert full reference and place cursor between parentheses:
+          // "chickpeas"(<cursor>)
+          item.range = buildQuotedReferenceRange(document, position);
+          item.filterText = `"${label}`;
+          item.insertText = new vscode.SnippetString(`"${escapeSnippetText(label)}"($1)`);
+          item.command = { command: 'editor.action.triggerSuggest', title: 'Trigger autocomplete for quantity' };
+          
+          candidates.push(item);
+        }
+      }
+
+      return candidates;
+    }
+  }, '"');
+
+  // Completion provider for @ate/@exercised references
+  const dayCompletionProvider = vscode.languages.registerCompletionItemProvider('nutrition', {
+    async provideCompletionItems(document: vscode.TextDocument, position: vscode.Position): Promise<vscode.CompletionItem[]> {
+      const line = document.lineAt(position.line).text;
+      const lineText = line.substring(0, position.character);
+
+      // Check if we're in a @day block and on an @ate or @exercised line
+      let inDay = false;
+      for (let i = position.line; i >= 0; i--) {
+        const checkLine = document.lineAt(i).text;
+        if (/@day\b/.test(checkLine)) {
+          inDay = true;
+          break;
+        }
+        if (/^\}/.test(checkLine.trim())) {
+          break;
+        }
+      }
+
+      if (!inDay) {
+        return [];
+      }
+
+      const isAte = /@ate\b/.test(line);
+      const isExercised = /@exercised\b/.test(line);
+
+      if (!isAte && !isExercised) {
+        return [];
+      }
+
+      // Must be inside quotes
+      const quoteCount = (lineText.match(/"/g) ?? []).length;
+      if (quoteCount % 2 === 0) {
+        return [];
+      }
+
+      const word = getWordAtPosition(document, position);
+      const availableAliases = await getAvailableAliases(document);
+
+      const candidates: vscode.CompletionItem[] = [];
+      const seen = new Set<string>();
+
+      for (const [label, info] of availableAliases) {
+        let include = false;
+
+        // Filter by context
+        if (isAte) {
+          // @ate can reference ingredients, foods, or recipes
+          include = info.kind === 'ingredient' || info.kind === 'food' || info.kind === 'recipe';
+        } else if (isExercised) {
+          // @exercised can reference exercises
+          include = info.kind === 'exercise';
+        }
+
+        if (include && label.toLowerCase().includes(word.toLowerCase())) {
+          const dedupeKey = `${info.kind}:${label.toLowerCase()}`;
+          if (seen.has(dedupeKey)) {
+            continue;
+          }
+          seen.add(dedupeKey);
+          const item = new vscode.CompletionItem(label, vscode.CompletionItemKind.Variable);
+          item.detail = info.kind;
+          if (info.aliases.length > 1) {
+            item.documentation = `Also known as: ${info.aliases.slice(1).join(', ')}`;
+          }
+          
+          // Insert full reference and place cursor between parentheses:
+          // "chickpeas"(<cursor>)
+          item.range = buildQuotedReferenceRange(document, position);
+          item.filterText = `"${label}`;
+          item.insertText = new vscode.SnippetString(`"${escapeSnippetText(label)}"($1)`);
+          item.command = { command: 'editor.action.triggerSuggest', title: 'Trigger autocomplete for quantity' };
+          
+          candidates.push(item);
+        }
+      }
+
+      return candidates;
+    }
+  }, '"');
+
+  // Completion provider for quantities inside parentheses
+  const quantityCompletionProvider = vscode.languages.registerCompletionItemProvider('nutrition', {
+    async provideCompletionItems(document: vscode.TextDocument, position: vscode.Position): Promise<vscode.CompletionItem[]> {
+      const line = document.lineAt(position.line).text;
+      const lineText = line.substring(0, position.character);
+
+      // Check if we're inside parentheses right after a food name: "someName"(|
+      // Match the quoted food name followed by opening paren with optional whitespace
+      const parenMatch = lineText.match(/"([^"]+)"\s*\(\s*$/);
+      if (!parenMatch) {
+        return [];
+      }
+
+      const foodName = parenMatch[1];
+      const availableAliases = await getAvailableAliases(document);
+      const info = availableAliases.get(foodName);
+
+      if (!info) {
+        return [];
+      }
+
+      // Find the declaration and extract quantities
+      const kindMap: Record<string, DeclarationKind> = {
+        'ingredient': 'ingredient',
+        'food': 'food',
+        'recipe': 'recipe',
+        'exercise': 'exercise'
+      };
+
+      const targetKind = kindMap[info.kind];
+      const targetConfig = DECL_CONFIGS.find(c => c.kind === targetKind);
+
+      if (!targetConfig) {
+        return [];
+      }
+
+      const decls = await collectDeclarationsAcrossImports(document, targetConfig);
+      const targetDecl = decls.find(d => d.aliases.includes(foodName));
+
+      if (!targetDecl) {
+        return [];
+      }
+
+      // Extract all quantities from the declaration header.
+      // Supports multi-line declarations like:
+      // @food(q1)(q2) "label1"
+      // "label2" {
+      //   ...
+      // }
+      const sourceDocument = await vscode.workspace.openTextDocument(targetDecl.uri);
+      const declHeader = getDeclarationHeaderFromDocument(sourceDocument, targetDecl.line);
+
+      const headerSegment = declHeader.split('{', 1)[0] ?? declHeader;
+      const quantityMatches = headerSegment.match(/\(([^)]+)\)/g);
+      if (!quantityMatches || quantityMatches.length === 0) {
+        return [];
+      }
+
+      const candidates: vscode.CompletionItem[] = [];
+      
+      // All matches are quantities (the declarations don't have other parentheses)
+      quantityMatches.forEach((quantMatch, index) => {
+        const quantity = quantMatch.slice(1, -1).trim();
+        const item = new vscode.CompletionItem(quantity, vscode.CompletionItemKind.Unit);
+        item.detail = index === 0 ? 'default' : 'alternate';
+        item.sortText = String(index).padStart(5, '0'); // Sort by order in declaration
+        const nextChar = line.charAt(position.character);
+        item.insertText = nextChar === ')' ? quantity : `${quantity})`;
+        candidates.push(item);
+      });
+
+      return candidates;
+    }
+  }, ' ');
+
+  context.subscriptions.push(recipeCompletionProvider, dayCompletionProvider, quantityCompletionProvider);
+}
+
 function registerFormattingProvider(context: vscode.ExtensionContext) {
   const provider = vscode.languages.registerDocumentFormattingEditProvider('nutrition', {
     provideDocumentFormattingEdits(document: vscode.TextDocument): vscode.TextEdit[] {
@@ -767,6 +1107,7 @@ export function activate(context: vscode.ExtensionContext) {
   registerImportDocumentLinks(context);
   registerImportDefinitionProvider(context);
   registerFormattingProvider(context);
+  registerCompletionProviders(context);
 
   startLanguageClient(context).catch((err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
