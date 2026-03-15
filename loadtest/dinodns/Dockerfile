@@ -31,6 +31,9 @@ RUN npm prune --omit=dev
 # --------------------------------------------------------------------------
 FROM node:20-alpine AS runtime
 
+# bind-tools provides nslookup/dig for the Docker healthcheck
+RUN apk add --no-cache bind-tools
+
 WORKDIR /app
 
 # Copy the compiled DinoDNS library and its production dependencies

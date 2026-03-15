@@ -2,9 +2,10 @@
 """
 generate.py — Generates test domain data for the DinoDNS load test.
 
-Outputs:
-  <output_dir>/domains.json      — 100 domain→IP mappings (for DNS servers)
-  <output_dir>/queries.txt       — 200 dnsperf query lines (50% NOERROR, 50% NXDOMAIN)
+Outputs (filenames are fixed; counts depend on --count, default 100):
+  <output_dir>/domains.json      — N domain→IP mappings (default: 100)
+  <output_dir>/queries.txt       — 2×N dnsperf query lines, shuffled
+                                   (50% NOERROR / 50% NXDOMAIN, default: 200)
   <output_dir>/Corefile          — CoreDNS configuration
   <output_dir>/zone.db           — CoreDNS zone file
   <output_dir>/server.js         — DinoDNS server entry-point (loads domains at boot)
@@ -120,24 +121,35 @@ def write_dinodns_server(
     """
     Write a standalone Node.js server script that uses the compiled DinoDNS
     library (available at /app/dinodns/dist) to serve the generated domains.
+
+    Import paths mirror those used in the official DinoDNS examples so they
+    resolve correctly against the compiled dist layout:
+      dist/DinoDNS/index.js                    → DinoDNS class
+      dist/plugins/storage/DefaultStore/index.js → DefaultStore class
+      dist/common/index.js                     → DNSOverUDP, DNSOverTCP
+
     The script reads /config/domains.json at boot so it works both locally
     (volume-mounted) and in AWS (downloaded from S3 by the entrypoint).
     """
-    multithreaded_str = "true" if cluster_mode else "false"
     script = f"""\
 'use strict';
 const fs = require('fs');
 const path = require('path');
 
-// DinoDNS built from source lives at /app/dinodns/dist
-const dinodnsRoot = path.resolve(__dirname, 'dinodns', 'dist');
-const {{ DinoDNS }} = require(dinodnsRoot);
-const {{ DefaultStore }} = require(path.join(dinodnsRoot, 'plugins', 'storage', 'DefaultStore'));
-const {{ DNSOverUDP, DNSOverTCP }} = require(path.join(dinodnsRoot, 'common'));
+// DinoDNS compiled library lives at /app/dinodns/dist.
+// Require paths follow the DinoDNS source example conventions:
+//   DinoDNS class      → dist/DinoDNS
+//   DefaultStore class → dist/plugins/storage/DefaultStore
+//   Network transports → dist/common
+const DINO_DIST = path.resolve('/app', 'dinodns', 'dist');
+
+const {{ DinoDNS }}     = require(path.join(DINO_DIST, 'DinoDNS'));
+const {{ DefaultStore }} = require(path.join(DINO_DIST, 'plugins', 'storage', 'DefaultStore'));
+const {{ DNSOverUDP, DNSOverTCP }} = require(path.join(DINO_DIST, 'common'));
 
 const DOMAINS_FILE = process.env.DOMAINS_FILE || '/config/domains.json';
-const PORT = parseInt(process.env.DNS_PORT || '{port}', 10);
-const CLUSTER_MODE = (process.env.CLUSTER_MODE || '{str(cluster_mode).lower()}') === 'true';
+const PORT         = parseInt(process.env.DNS_PORT    || '{port}',                    10);
+const CLUSTER_MODE = (process.env.CLUSTER_MODE        || '{str(cluster_mode).lower()}') === 'true';
 
 const domains = JSON.parse(fs.readFileSync(DOMAINS_FILE, 'utf8'));
 const store = new DefaultStore();

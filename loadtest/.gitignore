@@ -1,0 +1,12 @@
+# Generated config files — created at runtime by generate.py
+config/
+
+# Docker Compose override / env file
+.env
+
+# Terraform state and local cache
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/*.tfvars

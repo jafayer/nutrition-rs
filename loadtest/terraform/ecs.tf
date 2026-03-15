@@ -2,14 +2,20 @@
 # loadtest/terraform/ecs.tf
 #
 # ECS cluster, task definitions, and services for:
-#   • DinoDNS (one task per replica — supports horizontal + vertical scaling)
-#   • CoreDNS  (one task per replica)
-#   • DNSperf→DinoDNS (one task; runs the test and exits)
-#   • DNSperf→CoreDNS (one task; runs the test and exits)
 #
-# Each DNSperf task is co-located in the same Fargate task as the DNS server
-# it tests (multi-container task) so they share the same network namespace
-# (127.0.0.1) — eliminating cross-task network latency entirely.
+#   DNS server services  (long-running, registered behind NLBs)
+#     • DinoDNS   — aws_ecs_service.dinodns   (var.dinodns_count replicas)
+#     • CoreDNS   — aws_ecs_service.coredns   (var.coredns_count replicas)
+#
+#   DNSperf run-to-completion tasks  (run once, exit with results)
+#     • dnsperf-dinodns — targets the DinoDNS NLB
+#     • dnsperf-coredns — targets the CoreDNS NLB
+#
+# IMPORTANT: DNS servers and DNSperf tasks are SEPARATE Fargate tasks that
+# land on different underlying hosts.  Each task gets its own dedicated CPU
+# and memory allocation so neither workload can bottleneck the other.
+# DNSperf reaches the DNS servers through the NLBs defined in nlb.tf, which
+# operate at Layer-4 (pass-through) so added latency is negligible.
 ###############################################################################
 
 data "aws_caller_identity" "current" {}
@@ -49,7 +55,7 @@ resource "aws_ecs_cluster_capacity_providers" "fargate" {
 }
 
 # ----------------------------------------------------------
-# Local helpers
+# Shared locals
 # ----------------------------------------------------------
 
 locals {
@@ -71,126 +77,211 @@ locals {
 }
 
 # ===========================================================================
-# DinoDNS + DNSperf — single Fargate task (shared network namespace)
+# DinoDNS — dedicated task definition + long-running ECS service
+# (registered with the DinoDNS NLB target groups)
 # ===========================================================================
 
 resource "aws_ecs_task_definition" "dinodns" {
   family                   = "${local.name_prefix}-dinodns"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  cpu                      = tostring(var.dinodns_cpu + var.dnsperf_cpu)
-  memory                   = tostring(var.dinodns_memory + var.dnsperf_memory)
-  execution_role_arn       = aws_iam_role.ecs_execution.arn
-  task_role_arn            = aws_iam_role.ecs_task.arn
+  # CPU / memory sized exclusively for DinoDNS — DNSperf runs on separate hardware
+  cpu                = tostring(var.dinodns_cpu)
+  memory             = tostring(var.dinodns_memory)
+  execution_role_arn = aws_iam_role.ecs_execution.arn
+  task_role_arn      = aws_iam_role.ecs_task.arn
 
-  container_definitions = jsonencode([
-    # ---- DinoDNS ----
-    {
-      name      = "dinodns"
-      image     = "${aws_ecr_repository.dinodns.repository_url}:latest"
-      essential = true
-      cpu       = var.dinodns_cpu
-      memory    = var.dinodns_memory
+  container_definitions = jsonencode([{
+    name      = "dinodns"
+    image     = "${aws_ecr_repository.dinodns.repository_url}:latest"
+    essential = true
 
-      portMappings = [
-        { containerPort = var.dns_port, protocol = "udp" },
-        { containerPort = var.dns_port, protocol = "tcp" },
-      ]
+    portMappings = [
+      { containerPort = var.dns_port, protocol = "udp" },
+      { containerPort = var.dns_port, protocol = "tcp" },
+    ]
 
-      environment = concat(local.s3_env, [
-        { name = "DNS_PORT",      value = tostring(var.dns_port) },
-        { name = "CLUSTER_MODE",  value = tostring(var.dinodns_cluster_mode) },
-        { name = "DOMAINS_FILE",  value = "/config/domains.json" },
-      ])
+    environment = concat(local.s3_env, [
+      { name = "DNS_PORT",     value = tostring(var.dns_port) },
+      { name = "CLUSTER_MODE", value = tostring(var.dinodns_cluster_mode) },
+      { name = "DOMAINS_FILE", value = "/config/domains.json" },
+    ])
 
-      logConfiguration = local.log_config
-    },
-
-    # ---- DNSperf (sidecar) ----
-    {
-      name      = "dnsperf"
-      image     = "${aws_ecr_repository.dnsperf.repository_url}:latest"
-      essential = true   # When DNSperf finishes the whole task stops
-      cpu       = var.dnsperf_cpu
-      memory    = var.dnsperf_memory
-
-      environment = concat(local.s3_env, [
-        # Loopback — same network namespace as DinoDNS
-        { name = "DNS_SERVER",          value = "127.0.0.1" },
-        { name = "DNS_PORT",            value = tostring(var.dns_port) },
-        { name = "TEST_DURATION",       value = tostring(var.test_duration) },
-        { name = "DNSPERF_EXTRA_ARGS",  value = var.dnsperf_extra_args },
-        { name = "SERVER_LABEL",        value = "dinodns" },
-      ])
-
-      logConfiguration = local.log_config
-
-      dependsOn = [{
-        containerName = "dinodns"
-        condition     = "START"
-      }]
-    },
-  ])
+    logConfiguration = local.log_config
+  }])
 
   tags = { Name = "${local.name_prefix}-dinodns-td" }
 }
 
+resource "aws_ecs_service" "dinodns" {
+  name            = "${local.name_prefix}-dinodns"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.dinodns.arn
+  desired_count   = var.dinodns_count
+  launch_type     = "FARGATE"
+
+  # Spread tasks across all subnets so replicas land on different hosts
+  network_configuration {
+    subnets          = [for s in aws_subnet.public : s.id]
+    security_groups  = [aws_security_group.dns_server.id]
+    assign_public_ip = true   # Required for Fargate in a public subnet to pull images
+  }
+
+  # Register with both UDP and TCP NLB target groups
+  load_balancer {
+    target_group_arn = aws_lb_target_group.dinodns_udp.arn
+    container_name   = "dinodns"
+    container_port   = var.dns_port
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.dinodns_tcp.arn
+    container_name   = "dinodns"
+    container_port   = var.dns_port
+  }
+
+  # Ensure NLB listeners + target groups exist before the service
+  depends_on = [
+    aws_lb_listener.dinodns_udp,
+    aws_lb_listener.dinodns_tcp,
+  ]
+
+  tags = { Name = "${local.name_prefix}-dinodns-svc" }
+}
+
 # ===========================================================================
-# CoreDNS + DNSperf — single Fargate task (shared network namespace)
+# CoreDNS — dedicated task definition + long-running ECS service
 # ===========================================================================
 
 resource "aws_ecs_task_definition" "coredns" {
   family                   = "${local.name_prefix}-coredns"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  cpu                      = tostring(var.coredns_cpu + var.dnsperf_cpu)
-  memory                   = tostring(var.coredns_memory + var.dnsperf_memory)
-  execution_role_arn       = aws_iam_role.ecs_execution.arn
-  task_role_arn            = aws_iam_role.ecs_task.arn
+  cpu                = tostring(var.coredns_cpu)
+  memory             = tostring(var.coredns_memory)
+  execution_role_arn = aws_iam_role.ecs_execution.arn
+  task_role_arn      = aws_iam_role.ecs_task.arn
 
-  container_definitions = jsonencode([
-    # ---- CoreDNS ----
-    {
-      name      = "coredns"
-      image     = "${aws_ecr_repository.coredns.repository_url}:latest"
-      essential = true
-      cpu       = var.coredns_cpu
-      memory    = var.coredns_memory
+  container_definitions = jsonencode([{
+    name      = "coredns"
+    image     = "${aws_ecr_repository.coredns.repository_url}:latest"
+    essential = true
 
-      portMappings = [
-        { containerPort = 53, protocol = "udp" },
-        { containerPort = 53, protocol = "tcp" },
-      ]
+    portMappings = [
+      { containerPort = 53, protocol = "udp" },
+      { containerPort = 53, protocol = "tcp" },
+    ]
 
-      environment = concat(local.s3_env, [])
+    environment = concat(local.s3_env, [])
 
-      logConfiguration = local.log_config
-    },
-
-    # ---- DNSperf (sidecar) ----
-    {
-      name      = "dnsperf"
-      image     = "${aws_ecr_repository.dnsperf.repository_url}:latest"
-      essential = true
-      cpu       = var.dnsperf_cpu
-      memory    = var.dnsperf_memory
-
-      environment = concat(local.s3_env, [
-        { name = "DNS_SERVER",          value = "127.0.0.1" },
-        { name = "DNS_PORT",            value = "53" },
-        { name = "TEST_DURATION",       value = tostring(var.test_duration) },
-        { name = "DNSPERF_EXTRA_ARGS",  value = var.dnsperf_extra_args },
-        { name = "SERVER_LABEL",        value = "coredns" },
-      ])
-
-      logConfiguration = local.log_config
-
-      dependsOn = [{
-        containerName = "coredns"
-        condition     = "START"
-      }]
-    },
-  ])
+    logConfiguration = local.log_config
+  }])
 
   tags = { Name = "${local.name_prefix}-coredns-td" }
+}
+
+resource "aws_ecs_service" "coredns" {
+  name            = "${local.name_prefix}-coredns"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.coredns.arn
+  desired_count   = var.coredns_count
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = [for s in aws_subnet.public : s.id]
+    security_groups  = [aws_security_group.dns_server.id]
+    assign_public_ip = true
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.coredns_udp.arn
+    container_name   = "coredns"
+    container_port   = 53
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.coredns_tcp.arn
+    container_name   = "coredns"
+    container_port   = 53
+  }
+
+  depends_on = [
+    aws_lb_listener.coredns_udp,
+    aws_lb_listener.coredns_tcp,
+  ]
+
+  tags = { Name = "${local.name_prefix}-coredns-svc" }
+}
+
+# ===========================================================================
+# DNSperf → DinoDNS
+#
+# Runs as a standalone Fargate task on its own dedicated host.
+# Reaches DinoDNS exclusively through the Layer-4 NLB — no shared resources
+# with the DNS server.
+# The task definition is registered here; the orchestration script (run.sh /
+# orchestrate.py) runs it via `aws ecs run-task` after the DNS services are
+# healthy.
+# ===========================================================================
+
+resource "aws_ecs_task_definition" "dnsperf_dinodns" {
+  family                   = "${local.name_prefix}-dnsperf-dinodns"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  # CPU / memory sized exclusively for DNSperf — DinoDNS runs on separate hardware
+  cpu                = tostring(var.dnsperf_cpu)
+  memory             = tostring(var.dnsperf_memory)
+  execution_role_arn = aws_iam_role.ecs_execution.arn
+  task_role_arn      = aws_iam_role.ecs_task.arn
+
+  container_definitions = jsonencode([{
+    name      = "dnsperf"
+    image     = "${aws_ecr_repository.dnsperf.repository_url}:latest"
+    essential = true
+
+    environment = concat(local.s3_env, [
+      # Point at the DinoDNS NLB — never at loopback or the DinoDNS task directly
+      { name = "DNS_SERVER",         value = aws_lb.dinodns.dns_name },
+      { name = "DNS_PORT",           value = tostring(var.dns_port) },
+      { name = "TEST_DURATION",      value = tostring(var.test_duration) },
+      { name = "DNSPERF_EXTRA_ARGS", value = var.dnsperf_extra_args },
+      { name = "SERVER_LABEL",       value = "dinodns" },
+    ])
+
+    logConfiguration = local.log_config
+  }])
+
+  tags = { Name = "${local.name_prefix}-dnsperf-dinodns-td" }
+}
+
+# ===========================================================================
+# DNSperf → CoreDNS  (same pattern, points at CoreDNS NLB)
+# ===========================================================================
+
+resource "aws_ecs_task_definition" "dnsperf_coredns" {
+  family                   = "${local.name_prefix}-dnsperf-coredns"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                = tostring(var.dnsperf_cpu)
+  memory             = tostring(var.dnsperf_memory)
+  execution_role_arn = aws_iam_role.ecs_execution.arn
+  task_role_arn      = aws_iam_role.ecs_task.arn
+
+  container_definitions = jsonencode([{
+    name      = "dnsperf"
+    image     = "${aws_ecr_repository.dnsperf.repository_url}:latest"
+    essential = true
+
+    environment = concat(local.s3_env, [
+      { name = "DNS_SERVER",         value = aws_lb.coredns.dns_name },
+      { name = "DNS_PORT",           value = "53" },
+      { name = "TEST_DURATION",      value = tostring(var.test_duration) },
+      { name = "DNSPERF_EXTRA_ARGS", value = var.dnsperf_extra_args },
+      { name = "SERVER_LABEL",       value = "coredns" },
+    ])
+
+    logConfiguration = local.log_config
+  }])
+
+  tags = { Name = "${local.name_prefix}-dnsperf-coredns-td" }
 }

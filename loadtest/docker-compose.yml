@@ -6,21 +6,20 @@
 #   2. Build/run:
 #        docker compose up --build --abort-on-container-exit
 #
+# Architecture note (mirrors AWS):
+#   Each service runs in its own container with dedicated CPU and memory limits
+#   so that DinoDNS / CoreDNS cannot be starved by DNSperf and vice-versa.
+#   This matches the AWS design where each ECS Fargate task lands on a
+#   separate host.  Override resource limits via .env or environment exports.
+#
 # Override any variable in .env or by exporting it before running compose.
 
 name: dns-loadtest
 
-# ---------------------------------------------------------------------------
-# Default values — override in .env or via environment
-# ---------------------------------------------------------------------------
-x-defaults:
-  dns-port: &dns-port "53"
-  test-duration: &test-duration "30"
-
 services:
 
   # -------------------------------------------------------------------------
-  # DinoDNS — built from source
+  # DinoDNS — built from source; runs on its own container
   # -------------------------------------------------------------------------
   dinodns:
     build:
@@ -35,29 +34,35 @@ services:
       DOMAINS_FILE: /config/domains.json
     volumes:
       - ./config:/config:ro
-    # Privileged is needed for port 53 in some host environments.
-    # For local testing we expose on a high port instead.
+    # Expose on a high host port; containers on the internal network use :53
     ports:
       - "${DINODNS_HOST_PORT:-1053}:53/udp"
       - "${DINODNS_HOST_PORT:-1053}:53/tcp"
     networks:
       - loadtest
+    # Dedicate CPU and memory so DNSperf cannot starve the server
+    deploy:
+      resources:
+        limits:
+          cpus: "${DINODNS_CPUS:-1.0}"
+          memory: "${DINODNS_MEMORY:-512m}"
     healthcheck:
-      test: ["CMD", "node", "-e",
-             "require('dns').resolve('nonexistent.loadtest.internal', (e) => process.exit(e && e.code !== 'ENOTFOUND' ? 1 : 0))"]
+      # nslookup returns NXDOMAIN (exit 1) or NOERROR for known names; both
+      # mean the server is up. Only a connection failure returns exit 2.
+      test: ["CMD-SHELL", "nslookup healthcheck.internal 127.0.0.1 >/dev/null 2>&1; [ $? -ne 2 ]"]
       interval: 5s
       timeout: 5s
       retries: 12
 
   # -------------------------------------------------------------------------
-  # CoreDNS
+  # CoreDNS — runs on its own container
   # -------------------------------------------------------------------------
   coredns:
     build:
       context: ./coredns
       dockerfile: Dockerfile
     environment:
-      S3_CONFIG_BUCKET: ""    # empty = use volume mount
+      S3_CONFIG_BUCKET: ""    # empty → use volume mount
     volumes:
       - ./config:/etc/coredns:ro
     ports:
@@ -65,14 +70,24 @@ services:
       - "${COREDNS_HOST_PORT:-1054}:53/tcp"
     networks:
       - loadtest
+    deploy:
+      resources:
+        limits:
+          cpus: "${COREDNS_CPUS:-1.0}"
+          memory: "${COREDNS_MEMORY:-512m}"
     healthcheck:
-      test: ["CMD", "/coredns", "-conf", "/etc/coredns/Corefile", "-version"]
+      test: ["CMD", "/coredns", "-version"]
       interval: 5s
       timeout: 5s
       retries: 12
 
   # -------------------------------------------------------------------------
   # DNSperf → DinoDNS
+  #
+  # Runs on its own container (separate from the dinodns container).  On
+  # Docker Compose this means a distinct cgroup; on AWS it means a distinct
+  # Fargate host.  DNSperf connects to the "dinodns" service over the bridge
+  # network — analogous to going through the NLB in AWS.
   # -------------------------------------------------------------------------
   dnsperf-dinodns:
     build:
@@ -88,12 +103,17 @@ services:
       - ./config:/config:ro
     networks:
       - loadtest
+    deploy:
+      resources:
+        limits:
+          cpus: "${DNSPERF_CPUS:-0.5}"
+          memory: "${DNSPERF_MEMORY:-256m}"
     depends_on:
       dinodns:
         condition: service_healthy
 
   # -------------------------------------------------------------------------
-  # DNSperf → CoreDNS
+  # DNSperf → CoreDNS (same isolation guarantee)
   # -------------------------------------------------------------------------
   dnsperf-coredns:
     build:
@@ -109,6 +129,11 @@ services:
       - ./config:/config:ro
     networks:
       - loadtest
+    deploy:
+      resources:
+        limits:
+          cpus: "${DNSPERF_CPUS:-0.5}"
+          memory: "${DNSPERF_MEMORY:-256m}"
     depends_on:
       coredns:
         condition: service_healthy

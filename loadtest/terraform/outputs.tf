@@ -2,6 +2,16 @@
 # loadtest/terraform/outputs.tf
 ###############################################################################
 
+output "ecs_service_dinodns" {
+  description = "Name of the DinoDNS ECS service."
+  value       = aws_ecs_service.dinodns.name
+}
+
+output "ecs_service_coredns" {
+  description = "Name of the CoreDNS ECS service."
+  value       = aws_ecs_service.coredns.name
+}
+
 output "ecr_dinodns_url" {
   description = "ECR repository URL for the DinoDNS image."
   value       = aws_ecr_repository.dinodns.repository_url
@@ -35,6 +45,26 @@ output "ecs_task_definition_dinodns" {
 output "ecs_task_definition_coredns" {
   description = "ARN of the CoreDNS ECS task definition."
   value       = aws_ecs_task_definition.coredns.arn
+}
+
+output "ecs_task_definition_dnsperf_dinodns" {
+  description = "ARN of the DNSperf→DinoDNS ECS task definition."
+  value       = aws_ecs_task_definition.dnsperf_dinodns.arn
+}
+
+output "ecs_task_definition_dnsperf_coredns" {
+  description = "ARN of the DNSperf→CoreDNS ECS task definition."
+  value       = aws_ecs_task_definition.dnsperf_coredns.arn
+}
+
+output "nlb_dinodns_dns_name" {
+  description = "Internal NLB DNS name fronting the DinoDNS service."
+  value       = aws_lb.dinodns.dns_name
+}
+
+output "nlb_coredns_dns_name" {
+  description = "Internal NLB DNS name fronting the CoreDNS service."
+  value       = aws_lb.coredns.dns_name
 }
 
 output "cloudwatch_log_group" {
