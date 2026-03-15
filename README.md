@@ -13,31 +13,40 @@ A plain-text nutrition tracking tool built around the **Nutrition language** —
 
 ## Table of Contents
 
-- [The Nutrition Language](#the-nutrition-language)
-  - [File Format](#file-format)
-  - [Imports](#imports)
-  - [Comments](#comments)
-  - [Quantities](#quantities)
-  - [Properties](#properties)
-  - [Declarations](#declarations)
-    - [@ingredient](#ingredient)
-    - [@recipe](#recipe)
-    - [@exercise](#exercise)
-    - [@day](#day)
-- [CLI Usage](#cli-usage)
-  - [Installation](#installation)
-  - [Global Options](#global-options)
-  - [validate](#validate)
-  - [query](#query)
-  - [report](#report)
-  - [generate](#generate)
-  - [serve](#serve)
-- [VS Code Extension](#vs-code-extension)
-  - [Features](#features)
-  - [Installation](#installation-1)
-  - [Building from Source](#building-from-source)
-- [GitHub Syntax Highlighting](#github-syntax-highlighting)
-- [Examples](#examples)
+- [nutrition-rs](#nutrition-rs)
+  - [Table of Contents](#table-of-contents)
+  - [The Nutrition Language](#the-nutrition-language)
+    - [File Format](#file-format)
+    - [Imports](#imports)
+    - [Comments](#comments)
+    - [Quantities](#quantities)
+    - [Properties](#properties)
+    - [Declarations](#declarations)
+      - [`@ingredient`](#ingredient)
+      - [`@recipe`](#recipe)
+      - [`@exercise`](#exercise)
+      - [`@day`](#day)
+  - [CLI Usage](#cli-usage)
+    - [Installation](#installation)
+    - [Global Options](#global-options)
+    - [`validate`](#validate)
+    - [`query`](#query)
+    - [`report`](#report)
+    - [`generate`](#generate)
+      - [`generate ingredient`](#generate-ingredient)
+      - [`generate recipe`](#generate-recipe)
+      - [`generate day`](#generate-day)
+    - [`serve`](#serve)
+  - [VS Code Extension](#vs-code-extension)
+    - [Features](#features)
+    - [Installation](#installation-1)
+    - [Building from Source](#building-from-source)
+  - [GitHub Syntax Highlighting](#github-syntax-highlighting)
+    - [How Linguist works](#how-linguist-works)
+    - [What is needed for GitHub.com to render the grammar](#what-is-needed-for-githubcom-to-render-the-grammar)
+    - [Current state](#current-state)
+  - [Examples](#examples)
+  - [License](#license)
 
 ---
 
@@ -449,7 +458,8 @@ Output:
 nutrition generate recipe \
   --quantity <QUANTITY> \
   --alias <ALIAS> \
-  [--ingredient "<ALIAS>(<QUANTITY>)"]
+  [--ingredient "<ALIAS>(<QUANTITY>)"] \
+  [--from-cook]
 ```
 
 | Flag | Description |
@@ -457,6 +467,7 @@ nutrition generate recipe \
 | `-q, --quantity <QUANTITY>` | Yield quantity — required |
 | `-a, --alias <ALIAS>` | Recipe name(s) — required |
 | `--ingredient <SPEC>` | Ingredient in `"alias"(quantity)` format — repeat for multiple |
+| `--from-cook` | Read newline-delimited [Cooklang shopping-list](https://cooklang.org/cli/commands/shopping-list/) entries from `stdin` and infer `--ingredient` entries automatically (cannot be combined with `--ingredient`) |
 
 **Example:**
 ```bash
@@ -465,6 +476,15 @@ nutrition generate recipe \
   --alias "lentil soup" \
   --ingredient '"lentils"(200g)' \
   --ingredient '"water"(500ml)'
+```
+
+**Cooklang shopping-list input example:**
+```bash
+cook shopping-list ~/Sync/cook/cauliflower-taco-bowls.cook \
+  | nutrition generate recipe \
+      --quantity 8 \
+      --alias "Cauliflower Taco Bowl" \
+      --from-cook
 ```
 
 #### `generate day`
