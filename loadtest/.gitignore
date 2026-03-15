@@ -1,6 +1,10 @@
 # Generated config files — created at runtime by generate.py
 config/
 
+# Python bytecode
+__pycache__/
+*.pyc
+
 # Docker Compose override / env file
 .env
 
