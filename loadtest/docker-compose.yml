@@ -1,0 +1,118 @@
+# Docker Compose — DNS load test (local / CI mode)
+#
+# Prerequisites:
+#   1. Generate config files:
+#        python3 generate.py --output-dir ./config [options]
+#   2. Build/run:
+#        docker compose up --build --abort-on-container-exit
+#
+# Override any variable in .env or by exporting it before running compose.
+
+name: dns-loadtest
+
+# ---------------------------------------------------------------------------
+# Default values — override in .env or via environment
+# ---------------------------------------------------------------------------
+x-defaults:
+  dns-port: &dns-port "53"
+  test-duration: &test-duration "30"
+
+services:
+
+  # -------------------------------------------------------------------------
+  # DinoDNS — built from source
+  # -------------------------------------------------------------------------
+  dinodns:
+    build:
+      context: ./dinodns
+      dockerfile: Dockerfile
+      args:
+        DINODNS_REPO: ${DINODNS_REPO:-https://github.com/jafayer/DinoDNS.git}
+        DINODNS_BRANCH: ${DINODNS_BRANCH:-main}
+    environment:
+      DNS_PORT: ${DNS_PORT:-53}
+      CLUSTER_MODE: ${DINODNS_CLUSTER_MODE:-false}
+      DOMAINS_FILE: /config/domains.json
+    volumes:
+      - ./config:/config:ro
+    # Privileged is needed for port 53 in some host environments.
+    # For local testing we expose on a high port instead.
+    ports:
+      - "${DINODNS_HOST_PORT:-1053}:53/udp"
+      - "${DINODNS_HOST_PORT:-1053}:53/tcp"
+    networks:
+      - loadtest
+    healthcheck:
+      test: ["CMD", "node", "-e",
+             "require('dns').resolve('nonexistent.loadtest.internal', (e) => process.exit(e && e.code !== 'ENOTFOUND' ? 1 : 0))"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # -------------------------------------------------------------------------
+  # CoreDNS
+  # -------------------------------------------------------------------------
+  coredns:
+    build:
+      context: ./coredns
+      dockerfile: Dockerfile
+    environment:
+      S3_CONFIG_BUCKET: ""    # empty = use volume mount
+    volumes:
+      - ./config:/etc/coredns:ro
+    ports:
+      - "${COREDNS_HOST_PORT:-1054}:53/udp"
+      - "${COREDNS_HOST_PORT:-1054}:53/tcp"
+    networks:
+      - loadtest
+    healthcheck:
+      test: ["CMD", "/coredns", "-conf", "/etc/coredns/Corefile", "-version"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # -------------------------------------------------------------------------
+  # DNSperf → DinoDNS
+  # -------------------------------------------------------------------------
+  dnsperf-dinodns:
+    build:
+      context: ./dnsperf
+      dockerfile: Dockerfile
+    environment:
+      DNS_SERVER: dinodns
+      DNS_PORT: ${DNS_PORT:-53}
+      TEST_DURATION: ${TEST_DURATION:-30}
+      DNSPERF_EXTRA_ARGS: ${DNSPERF_EXTRA_ARGS:-}
+      SERVER_LABEL: dinodns
+    volumes:
+      - ./config:/config:ro
+    networks:
+      - loadtest
+    depends_on:
+      dinodns:
+        condition: service_healthy
+
+  # -------------------------------------------------------------------------
+  # DNSperf → CoreDNS
+  # -------------------------------------------------------------------------
+  dnsperf-coredns:
+    build:
+      context: ./dnsperf
+      dockerfile: Dockerfile
+    environment:
+      DNS_SERVER: coredns
+      DNS_PORT: ${DNS_PORT:-53}
+      TEST_DURATION: ${TEST_DURATION:-30}
+      DNSPERF_EXTRA_ARGS: ${DNSPERF_EXTRA_ARGS:-}
+      SERVER_LABEL: coredns
+    volumes:
+      - ./config:/config:ro
+    networks:
+      - loadtest
+    depends_on:
+      coredns:
+        condition: service_healthy
+
+networks:
+  loadtest:
+    driver: bridge
