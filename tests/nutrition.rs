@@ -299,6 +299,43 @@ fn daily_report_sums_ate_intake() {
 }
 
 #[test]
+fn daily_report_scales_recipe_servings_by_declared_yield() {
+    let flour = make_ingredient("flour", 100.0, "g", vec![("calories", 364.0, Some("kcal"))]);
+    let milk = make_ingredient("milk", 100.0, "g", vec![("calories", 42.0, Some("kcal"))]);
+    let recipe = Recipe {
+        aliases: vec!["pancakes".to_string()],
+        quantities: vec![Quantity { amount: 4.0, unit: None }],
+        ingredients: vec![
+            IngredientLabel {
+                alias: "flour".to_string(),
+                quantity: Quantity { amount: 200.0, unit: Some("g".to_string()) },
+            },
+            IngredientLabel {
+                alias: "milk".to_string(),
+                quantity: Quantity { amount: 300.0, unit: Some("g".to_string()) },
+            },
+        ],
+    };
+    let day = Day {
+        date: "2026-01-02".to_string(),
+        items: vec![DayItem::Ate(Ate {
+            food_alias: "pancakes".to_string(),
+            quantity: Quantity { amount: 2.0, unit: None },
+        })],
+    };
+    let doc = make_document(vec![
+        Item::Ingredient(flour),
+        Item::Ingredient(milk),
+        Item::Recipe(recipe),
+        Item::Day(day.clone()),
+    ]);
+
+    let report = compute_daily_report(&doc, &day);
+    let intake_cal = report.intake.iter().find(|p| p.name == "calories").unwrap();
+    assert!((intake_cal.value.amount - 427.0).abs() < 1e-6);
+}
+
+#[test]
 fn daily_report_subtracts_exercise_calories() {
     // eat 500 kcal, burn 200 kcal running → net 300 kcal
     let ing = make_ingredient("rice", 100.0, "g", vec![("calories", 130.0, Some("kcal"))]);

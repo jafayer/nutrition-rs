@@ -187,26 +187,40 @@ fn sum_properties(all_properties: Vec<Vec<Property>>) -> Vec<Property> {
         .collect()
 }
 
-/// Compute the scale factor needed to go from `ingredient_quantities` (the
-/// base declaration) to `requested` (the desired quantity).
+/// Compute the scale factor needed to go from `base_quantities` (the declared
+/// quantity) to `requested` (the desired quantity).
 ///
-/// Uses the ingredient's own unit registry (built from all declared quantity
+/// When `unitless_is_multiplier` is true, a unitless request means "that many
+/// full declared servings". When false, a unitless request is treated as being
+/// in the same unit domain as the declared base quantity, so `2` requested from
+/// a declared recipe yield of `4` scales by `2 / 4`.
+///
+/// Uses the item's own unit registry (built from all declared quantity
 /// equivalencies) for cross-unit conversions.
-fn compute_scale(ingredient_quantities: &[Quantity], requested: &Quantity) -> f64 {
-    if ingredient_quantities.is_empty() {
+fn compute_scale(
+    base_quantities: &[Quantity],
+    requested: &Quantity,
+    unitless_is_multiplier: bool,
+) -> f64 {
+    if base_quantities.is_empty() {
         // No declared base quantity – treat the base as 1 (unitless), so the
         // scale equals the requested amount directly.
         return requested.amount;
     }
 
-    let base = &ingredient_quantities[0];
+    let base = &base_quantities[0];
     let base_unit = base.unit.as_deref().unwrap_or("");
     let req_unit = requested.unit.as_deref().unwrap_or("");
 
-    // If requested quantity is unitless, treat it as a multiplier of the full serving.
-    // For example, @ate "aldi mini wheats"(1) means 1 full serving, not 1 biscuit.
+    // Ingredients and exercises use unitless requests as multipliers of the full
+    // declared serving. Recipes instead interpret unitless requests relative to
+    // their declared yield, e.g. requesting 2 from a recipe(4) is a half batch.
     if req_unit.is_empty() {
-        return requested.amount;
+        return if unitless_is_multiplier {
+            requested.amount
+        } else {
+            requested.amount / base.amount
+        };
     }
 
     if base_unit == req_unit {
@@ -217,7 +231,7 @@ fn compute_scale(ingredient_quantities: &[Quantity], requested: &Quantity) -> f6
     // Build a registry from the ingredient's own declared quantities so that
     // ingredient-scoped equivalencies (e.g. 100g = 1 cup for chickpeas) are
     // available.
-    let pairs: Vec<(f64, String)> = ingredient_quantities
+    let pairs: Vec<(f64, String)> = base_quantities
         .iter()
         .map(|q| (q.amount, q.unit.clone().unwrap_or_default()))
         .collect();
@@ -299,7 +313,7 @@ pub fn compute_ingredient_nutrition(
 ) -> NutritionReport {
     let scale = match requested_quantity {
         None => 1.0,
-        Some(req) => compute_scale(&ingredient.quantities, req),
+        Some(req) => compute_scale(&ingredient.quantities, req, true),
     };
 
     let name = ingredient.aliases.first().cloned().unwrap_or_default();
@@ -344,7 +358,7 @@ pub fn compute_recipe_nutrition(
     // Determine how much to scale the whole recipe.
     let recipe_scale = match requested_quantity {
         None => 1.0,
-        Some(req) => compute_scale(&recipe.quantities, req),
+        Some(req) => compute_scale(&recipe.quantities, req, false),
     };
 
     // Compute scaled properties for each ingredient in the recipe.
@@ -360,7 +374,7 @@ pub fn compute_recipe_nutrition(
         let ing_scale = if ingredient.quantities.is_empty() {
             ing_label.quantity.amount * recipe_scale
         } else {
-            compute_scale(&ingredient.quantities, &ing_label.quantity) * recipe_scale
+            compute_scale(&ingredient.quantities, &ing_label.quantity, true) * recipe_scale
         };
 
         let scaled = scale_properties(&ingredient.properties, ing_scale);
@@ -426,7 +440,7 @@ fn compute_exercise_nutrition(
 ) -> Vec<Property> {
     let scale = match requested_quantity {
         None => 1.0,
-        Some(req) => compute_scale(&exercise.quantities, req),
+        Some(req) => compute_scale(&exercise.quantities, req, true),
     };
     scale_properties(&exercise.properties, scale)
 }
@@ -556,7 +570,7 @@ pub fn compute_daily_trace_report(document: &Document, day: &Day) -> DailyNutrit
                         children: vec![],
                     });
                 } else if let Some(recipe) = recipes.get(&alias_key) {
-                    let recipe_scale = compute_scale(&recipe.quantities, &ate.quantity);
+                    let recipe_scale = compute_scale(&recipe.quantities, &ate.quantity, false);
                     let mut children = Vec::new();
                     let mut child_props = Vec::new();
 
@@ -566,7 +580,7 @@ pub fn compute_daily_trace_report(document: &Document, day: &Day) -> DailyNutrit
                             let ing_scale = if ingredient.quantities.is_empty() {
                                 ing_label.quantity.amount * recipe_scale
                             } else {
-                                compute_scale(&ingredient.quantities, &ing_label.quantity)
+                                compute_scale(&ingredient.quantities, &ing_label.quantity, true)
                                     * recipe_scale
                             };
                             let props = scale_properties(&ingredient.properties, ing_scale);
