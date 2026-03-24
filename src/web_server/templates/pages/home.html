@@ -29,8 +29,7 @@
     <div class="form-row">
       <div style="flex:2;min-width:160px;">
         <label for="food-alias">Food / Recipe name</label>
-        <input type="text" id="food-alias" placeholder="e.g. chickpeas" list="food-options" autocomplete="off" required>
-        <datalist id="food-options"></datalist>
+        <input type="text" id="food-alias" placeholder="e.g. chickpeas" autocomplete="off" required>
       </div>
       <div style="flex:1;min-width:110px;">
         <label for="food-qty">Quantity</label>
@@ -50,8 +49,7 @@
     <div class="form-row">
       <div style="flex:2;min-width:160px;">
         <label for="exercise-alias">Exercise name</label>
-        <input type="text" id="exercise-alias" placeholder="e.g. running" list="exercise-options" autocomplete="off" required>
-        <datalist id="exercise-options"></datalist>
+        <input type="text" id="exercise-alias" placeholder="e.g. running" autocomplete="off" required>
       </div>
       <div style="flex:1;min-width:110px;">
         <label for="exercise-qty">Duration / Quantity</label>
@@ -98,12 +96,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-document.addEventListener('DOMContentLoaded', () => {
-  fetchAndPopulateAliases('food-options', '/api/aliases/foods');
-  fetchAndPopulateAliases('exercise-options', '/api/aliases/exercises');
-});
-</script>
 <script>
 const todayDate = '{{ today_date }}';
 

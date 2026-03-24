@@ -34,12 +34,11 @@
         <p style="color:var(--text-dim);font-size:0.85rem;margin-bottom:0.5rem;">Use ingredient aliases already defined in your file.</p>
         <div class="repeatable-list" id="ings-list">
           <div class="repeatable-item">
-            <input type="text" placeholder="Ingredient alias" list="ing-options" style="flex:1.5" autocomplete="off">
+            <input type="text" placeholder="Ingredient alias" style="flex:1.5" autocomplete="off">
             <input type="text" placeholder="Quantity (e.g. 200g)" style="flex:1">
             <button type="button" class="secondary remove-btn" title="Remove">✕</button>
           </div>
         </div>
-        <datalist id="ing-options"></datalist>
         <button type="button" class="secondary" id="add-ing" style="margin-top:0.5rem;">+ Add ingredient</button>
       </div>
 
@@ -52,7 +51,6 @@
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-  fetchAndPopulateAliases('ing-options', '/api/aliases/foods');
   addRemoveHandlers();
 
 document.getElementById('add-alias').onclick = () => {
