@@ -2,7 +2,7 @@
   "name": "nutrition-language",
   "displayName": "Nutrition Language Support",
   "description": "Language support for Nutrition files",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "repository": "https://github.com/jafayer/nutrition-rs",
   "license": "MIT",
   "publisher": "nutrition",
