@@ -31,6 +31,9 @@ fn unescape_string_literal(s: &str) -> String {
 
 #[derive(Logos, Debug, PartialEq, Clone)]
 pub enum Token {
+
+    #[token("!import")]
+    ImportDirective,
     #[token("@unit")]
     AtUnit,
     #[token("@property")]
@@ -90,6 +93,7 @@ pub enum Token {
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Token::ImportDirective => write!(f, "!import"),
             Token::AtUnit => write!(f, "@unit"),
             Token::AtProperty => write!(f, "@property"),
             Token::AtIngredient => write!(f, "@ingredient"),

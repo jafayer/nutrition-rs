@@ -51,6 +51,100 @@ fn parses_basic_ingredient() {
 }
 
 #[test]
+fn ingredient_aliases_inline_and_newline_forms_are_equivalent() {
+    let inline_doc = parse_document(
+        r#"@ingredient(100g)(1 cup) "chickpeas" "chickpea" "garbanzo beans" {
+    calories: 269
+}"#,
+    );
+
+    let newline_doc = parse_document(
+        r#"@ingredient(100g)(1 cup)
+"chickpeas"
+"chickpea"
+"garbanzo beans" {
+    calories: 269
+}"#,
+    );
+
+    match (&inline_doc.items[0], &newline_doc.items[0]) {
+        (Item::Ingredient(inline), Item::Ingredient(newline)) => {
+            assert_eq!(inline.aliases, newline.aliases);
+            assert_eq!(inline.aliases, vec!["chickpeas", "chickpea", "garbanzo beans"]);
+        }
+        other => panic!("unexpected parsed items: {other:?}"),
+    }
+}
+
+#[test]
+fn ingredient_aliases_allow_newlines_and_comments_between_strings() {
+    let doc = parse_document(
+        r#"@ingredient(100g)(1 cup)
+"chickpeas"
+// alias note
+"chickpea"
+// another alias note
+"garbanzo beans" {
+    calories: 269
+}"#,
+    );
+
+    match &doc.items[0] {
+        Item::Ingredient(ingredient) => {
+            assert_eq!(ingredient.aliases, vec!["chickpeas", "chickpea", "garbanzo beans"]);
+        }
+        other => panic!("unexpected parsed item: {other:?}"),
+    }
+}
+
+#[test]
+fn food_aliases_inline_and_newline_forms_are_equivalent() {
+    let inline_doc = parse_document(
+        r#"@food(100g)(1 cup) "chickpeas" "chickpea" "garbanzo beans" {
+    calories: 269
+}"#,
+    );
+
+    let newline_doc = parse_document(
+        r#"@food(100g)(1 cup)
+"chickpeas"
+"chickpea"
+"garbanzo beans" {
+    calories: 269
+}"#,
+    );
+
+    match (&inline_doc.items[0], &newline_doc.items[0]) {
+        (Item::Ingredient(inline), Item::Ingredient(newline)) => {
+            assert_eq!(inline.aliases, newline.aliases);
+            assert_eq!(inline.aliases, vec!["chickpeas", "chickpea", "garbanzo beans"]);
+        }
+        other => panic!("unexpected parsed items: {other:?}"),
+    }
+}
+
+#[test]
+fn food_aliases_allow_newlines_and_comments_between_strings() {
+    let doc = parse_document(
+        r#"@food(100g)(1 cup)
+"chickpeas"
+// alias note
+"chickpea"
+// another alias note
+"garbanzo beans" {
+    calories: 269
+}"#,
+    );
+
+    match &doc.items[0] {
+        Item::Ingredient(food) => {
+            assert_eq!(food.aliases, vec!["chickpeas", "chickpea", "garbanzo beans"]);
+        }
+        other => panic!("unexpected parsed item: {other:?}"),
+    }
+}
+
+#[test]
 fn parses_recipe_with_ingredient_labels() {
 	let doc = parse_document(
 		r#"@recipe(4)(500g) "chickpea stew" {
@@ -75,6 +169,50 @@ fn parses_recipe_with_ingredient_labels() {
 		}
 		other => panic!("unexpected item parsed: {other:?}"),
 	}
+}
+
+#[test]
+fn recipe_aliases_inline_and_newline_forms_are_equivalent() {
+    let inline_doc = parse_document(
+        r#"@recipe(4)(500g) "chickpea stew" "stew" {
+    "chickpeas"(2 cups)
+}"#,
+    );
+
+    let newline_doc = parse_document(
+        r#"@recipe(4)(500g)
+"chickpea stew"
+"stew" {
+    "chickpeas"(2 cups)
+}"#,
+    );
+
+    match (&inline_doc.items[0], &newline_doc.items[0]) {
+        (Item::Recipe(inline), Item::Recipe(newline)) => {
+            assert_eq!(inline.aliases, newline.aliases);
+            assert_eq!(inline.aliases, vec!["chickpea stew", "stew"]);
+        }
+        other => panic!("unexpected parsed items: {other:?}"),
+    }
+}
+
+#[test]
+fn recipe_aliases_allow_newlines_and_comments_between_strings() {
+    let doc = parse_document(
+        r#"@recipe(4)(500g)
+"chickpea stew"
+// short name
+"stew" {
+    "chickpeas"(2 cups)
+}"#,
+    );
+
+    match &doc.items[0] {
+        Item::Recipe(recipe) => {
+            assert_eq!(recipe.aliases, vec!["chickpea stew", "stew"]);
+        }
+        other => panic!("unexpected parsed item: {other:?}"),
+    }
 }
 
 #[test]
@@ -126,6 +264,43 @@ fn parses_comment_as_item() {
 }
 
 #[test]
+fn parses_import_as_item() {
+    let doc = parse_document(r#"!import "./test_reference.nutrition""#);
+
+    assert_eq!(doc.items.len(), 1);
+    match &doc.items[0] {
+        Item::Import(path) => assert_eq!(path, "./test_reference.nutrition"),
+        other => panic!("unexpected item parsed: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_import_with_trailing_comment() {
+    let doc = parse_document(r#"!import "./test_reference.nutrition" // include seed data"#);
+
+    assert_eq!(doc.items.len(), 1);
+    match &doc.items[0] {
+        Item::Import(path) => assert_eq!(path, "./test_reference.nutrition"),
+        other => panic!("unexpected item parsed: {other:?}"),
+    }
+}
+
+#[test]
+fn parses_import_followed_by_declaration() {
+    let doc = parse_document(
+        r#"!import "./test_reference.nutrition"
+
+@ingredient(100g) "test" {
+  calories: 50
+}"#,
+    );
+
+    assert_eq!(doc.items.len(), 2);
+    assert!(matches!(doc.items[0], Item::Import(_)));
+    assert!(matches!(doc.items[1], Item::Ingredient(_)));
+}
+
+#[test]
 fn parses_exercise_block() {
 	let doc = parse_document(
 		r#"@exercise(30 min) "running" {
@@ -148,6 +323,50 @@ fn parses_exercise_block() {
 		}
 		other => panic!("unexpected item parsed: {other:?}"),
 	}
+}
+
+#[test]
+fn exercise_aliases_inline_and_newline_forms_are_equivalent() {
+    let inline_doc = parse_document(
+        r#"@exercise(30 min) "running" "jogging" {
+    calories: 300kcal
+}"#,
+    );
+
+    let newline_doc = parse_document(
+        r#"@exercise(30 min)
+"running"
+"jogging" {
+    calories: 300kcal
+}"#,
+    );
+
+    match (&inline_doc.items[0], &newline_doc.items[0]) {
+        (Item::Exercise(inline), Item::Exercise(newline)) => {
+            assert_eq!(inline.aliases, newline.aliases);
+            assert_eq!(inline.aliases, vec!["running", "jogging"]);
+        }
+        other => panic!("unexpected parsed items: {other:?}"),
+    }
+}
+
+#[test]
+fn exercise_aliases_allow_newlines_and_comments_between_strings() {
+    let doc = parse_document(
+        r#"@exercise(30 min)
+"running"
+// alternate name
+"jogging" {
+    calories: 300kcal
+}"#,
+    );
+
+    match &doc.items[0] {
+        Item::Exercise(exercise) => {
+            assert_eq!(exercise.aliases, vec!["running", "jogging"]);
+        }
+        other => panic!("unexpected parsed item: {other:?}"),
+    }
 }
 
 #[test]
@@ -457,4 +676,26 @@ fn diagnostic_header_only_when_no_brace() {
         diags[0].note_span.is_none(),
         "no brace → no note_span expected"
     );
+}
+
+#[test]
+fn diagnostic_header_flags_comma_separated_aliases() {
+    let source = r#"@food(1) "Fajita Veggie Breakfast Burrito", "Wawa breakfast burrito" {
+  calories: 520
+}"#;
+
+    let (_, diags) = parse_with_diagnostics(source);
+    assert!(!diags.is_empty(), "should report malformed declaration");
+
+    let d = &diags[0];
+    let note = d.note_span.as_ref().expect("note_span should be set for header token");
+    let snippet = &source[note.clone()];
+    assert!(snippet.contains(','), "expected note span to include comma, got: {snippet:?}");
+
+    let message = d
+        .note_message
+        .as_deref()
+        .expect("note_message should be set for header token");
+    assert!(message.contains("header"), "expected header-focused note, got: {message}");
+    assert!(message.contains("commas"), "expected comma guidance, got: {message}");
 }

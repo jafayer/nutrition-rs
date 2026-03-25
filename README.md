@@ -13,30 +13,40 @@ A plain-text nutrition tracking tool built around the **Nutrition language** —
 
 ## Table of Contents
 
-- [The Nutrition Language](#the-nutrition-language)
-  - [File Format](#file-format)
-  - [Comments](#comments)
-  - [Quantities](#quantities)
-  - [Properties](#properties)
-  - [Declarations](#declarations)
-    - [@ingredient](#ingredient)
-    - [@recipe](#recipe)
-    - [@exercise](#exercise)
-    - [@day](#day)
-- [CLI Usage](#cli-usage)
-  - [Installation](#installation)
-  - [Global Options](#global-options)
-  - [validate](#validate)
-  - [query](#query)
-  - [report](#report)
-  - [generate](#generate)
-  - [serve](#serve)
-- [VS Code Extension](#vs-code-extension)
-  - [Features](#features)
-  - [Installation](#installation-1)
-  - [Building from Source](#building-from-source)
-- [GitHub Syntax Highlighting](#github-syntax-highlighting)
-- [Examples](#examples)
+- [nutrition-rs](#nutrition-rs)
+  - [Table of Contents](#table-of-contents)
+  - [The Nutrition Language](#the-nutrition-language)
+    - [File Format](#file-format)
+    - [Imports](#imports)
+    - [Comments](#comments)
+    - [Quantities](#quantities)
+    - [Properties](#properties)
+    - [Declarations](#declarations)
+      - [`@ingredient`](#ingredient)
+      - [`@recipe`](#recipe)
+      - [`@exercise`](#exercise)
+      - [`@day`](#day)
+  - [CLI Usage](#cli-usage)
+    - [Installation](#installation)
+    - [Global Options](#global-options)
+    - [`validate`](#validate)
+    - [`query`](#query)
+    - [`report`](#report)
+    - [`generate`](#generate)
+      - [`generate ingredient`](#generate-ingredient)
+      - [`generate recipe`](#generate-recipe)
+      - [`generate day`](#generate-day)
+    - [`serve`](#serve)
+  - [VS Code Extension](#vs-code-extension)
+    - [Features](#features)
+    - [Installation](#installation-1)
+    - [Building from Source](#building-from-source)
+  - [GitHub Syntax Highlighting](#github-syntax-highlighting)
+    - [How Linguist works](#how-linguist-works)
+    - [What is needed for GitHub.com to render the grammar](#what-is-needed-for-githubcom-to-render-the-grammar)
+    - [Current state](#current-state)
+  - [Examples](#examples)
+  - [License](#license)
 
 ---
 
@@ -67,6 +77,19 @@ A `.nutrition` file is a plain-text document consisting of top-level declaration
   @ate "oatmeal"(1)
 }
 ```
+
+### Imports
+
+Use `!import` to include declarations from another `.nutrition` file.
+
+```nutrition
+!import "./shared_ingredients.nutrition"
+```
+
+- The import path must be a quoted string.
+- You can add an inline comment after the import line.
+- Imports are parsed as first-class top-level items, so files that begin with `!import` parse correctly.
+- CLI commands load imported files recursively (with cycle detection), so queries/reports can resolve declarations across imported files.
 
 ### Comments
 
@@ -124,6 +147,7 @@ Defines a food ingredient with one or more quantity equivalencies, one or more n
 
 - **Quantities** — one or more `(<quantity>)` groups defining the base serving size and optional alternate measurements (e.g. a weight and a volume). The first quantity is the canonical base.
 - **Aliases** — one or more quoted strings. Any alias can be used when referencing the ingredient in a recipe or day log.
+- **Alias layout** — aliases may appear on the same line as `@ingredient` or be newline-delimited across multiple lines before the `{` block.
 - **Properties** — nutritional facts per the base serving size. The block may be empty (`{}`).
 
 **Examples:**
@@ -136,6 +160,18 @@ Defines a food ingredient with one or more quantity equivalencies, one or more n
 
 // Multiple serving sizes (100g = 1 cup for this ingredient)
 @ingredient(100g)(1 cup) "chickpeas" "chickpea" "garbanzo beans" {
+  calories: 269
+  protein: 14.5g
+  fat: 4g
+  carbohydrates: 45g
+  fiber: 12.5g
+}
+
+// Equivalent newline-delimited alias form
+@ingredient(100g)(1 cup)
+"chickpeas"
+"chickpea"
+"garbanzo beans" {
   calories: 269
   protein: 14.5g
   fat: 4g
@@ -160,6 +196,7 @@ Defines a recipe as a combination of ingredients and specifies how many servings
 
 - **Yield quantities** — how much the recipe makes (e.g. `(4)` for 4 servings, `(500g)` for 500 g total). Multiple quantities define alternate yield representations.
 - **Aliases** — quoted name(s) for the recipe.
+- **Alias layout** — aliases may be inline or newline-delimited before the `{` block.
 - **Ingredient list** — each line is `"<alias>"(<quantity>)`, referencing any alias of an `@ingredient` or another `@recipe`. Entries can optionally be comma-separated.
 
 **Examples:**
@@ -197,6 +234,8 @@ Defines an exercise with a canonical duration/quantity and the calories (or othe
   calories: 300kcal
 }
 ```
+
+Exercise aliases follow the same rule as ingredients/recipes: one or more quoted aliases may be inline or newline-delimited before the `{` block.
 
 When referenced in a `@day` block via `@exercised`, the quantity is scaled to match the duration logged.
 
@@ -318,21 +357,33 @@ nutrition --file diet.nutrition query --name "chickpea stew" --json
 
 ### `report`
 
-Compute daily nutrition reports from `@day` blocks. By default, shows today's entry.
+Compute daily nutrition reports from `@day` blocks.
+
+- **Single-day mode**: `report [date]` (defaults to `today`)
+- **Range mode**: `report --start <DATE> --end <DATE>`
 
 ```bash
-nutrition --file <FILE> report [--start <DATE>] [--end <DATE>] [--ate-only] [--no-aggregate] [--json]
+nutrition --file <FILE> report [date] [--ate-only] [--json] [--trace]
+nutrition --file <FILE> report --start <DATE> --end <DATE> [--ate-only] [--no-aggregate] [--json] [--trace]
 ```
 
 | Flag | Description |
 |------|-------------|
+| `[date]` | Optional positional date (`YYYY-MM-DD` or `today`) for single-day mode |
 | `--start <DATE>` | Start date, inclusive (`YYYY-MM-DD` or `today`). Defaults to today. |
 | `--end <DATE>` | End date, inclusive (`YYYY-MM-DD` or `today`). Defaults to today. |
 | `--ate-only` | Show only intake; exclude exercise and net computation |
 | `--no-aggregate` | Show each day individually instead of averaging over the range |
 | `--json` | Output raw JSON |
+| `--trace` | Show a contribution tree of where each `@ate` / `@exercised` value came from |
+
+`[date]` cannot be combined with `--start` or `--end`.
 
 When `--start` and `--end` span multiple days the results are **aggregated** (averaged per day) by default. Use `--no-aggregate` to see each day separately.
+
+When `--trace` is provided, `report` prints a per-day source tree instead of the nutrition-label summary. Each node shows the logged alias, resolved kind (`ingredient`, `recipe`, `exercise`, or `unresolved`), quantity, and scaled property contributions. Recipe nodes include child ingredient nodes so you can see how totals were composed.
+
+`--trace --json` outputs structured trace JSON instead of the text tree.
 
 **Examples:**
 ```bash
@@ -340,10 +391,16 @@ When `--start` and `--end` span multiple days the results are **aggregated** (av
 nutrition --file diet.nutrition report
 
 # A specific day
-nutrition --file diet.nutrition report --start 2026-01-06 --end 2026-01-06
+nutrition --file diet.nutrition report 2026-01-06
 
 # Weekly average
 nutrition --file diet.nutrition report --start 2026-01-01 --end 2026-01-07
+
+# Trace where today's totals came from
+nutrition --file diet.nutrition report --trace
+
+# Trace output as JSON
+nutrition --file diet.nutrition report --trace --json
 
 # All days individually, intake only, as JSON
 nutrition --file diet.nutrition report \
@@ -401,7 +458,8 @@ Output:
 nutrition generate recipe \
   --quantity <QUANTITY> \
   --alias <ALIAS> \
-  [--ingredient "<ALIAS>(<QUANTITY>)"]
+  [--ingredient "<ALIAS>(<QUANTITY>)"] \
+  [--from-cook]
 ```
 
 | Flag | Description |
@@ -409,6 +467,7 @@ nutrition generate recipe \
 | `-q, --quantity <QUANTITY>` | Yield quantity — required |
 | `-a, --alias <ALIAS>` | Recipe name(s) — required |
 | `--ingredient <SPEC>` | Ingredient in `"alias"(quantity)` format — repeat for multiple |
+| `--from-cook` | Read newline-delimited [Cooklang shopping-list](https://cooklang.org/cli/commands/shopping-list/) entries from `stdin` and infer `--ingredient` entries automatically (cannot be combined with `--ingredient`) |
 
 **Example:**
 ```bash
@@ -417,6 +476,15 @@ nutrition generate recipe \
   --alias "lentil soup" \
   --ingredient '"lentils"(200g)' \
   --ingredient '"water"(500ml)'
+```
+
+**Cooklang shopping-list input example:**
+```bash
+cook shopping-list ~/Sync/cook/cauliflower-taco-bowls.cook \
+  | nutrition generate recipe \
+      --quantity 8 \
+      --alias "Cauliflower Taco Bowl" \
+      --from-cook
 ```
 
 #### `generate day`
@@ -500,8 +568,11 @@ The VS Code extension provides first-class editing support for `.nutrition` file
 | **Syntax highlighting** | Color-codes `@` keywords, strings, numbers, properties, and comments |
 | **Semantic highlighting** | Token-level highlighting using tree-sitter for `@ingredient`, `@recipe`, `@exercise`, `@day`, `@ate`, `@exercised`, and more |
 | **Find commands** | Quick-pick navigation to any ingredient, recipe, food, or day in the file (`Ctrl+Shift+P` → `Nutrition: Find …`) |
+| **Import-aware navigation** | `Find` commands traverse `!import` chains and include declarations from imported `.nutrition` files |
 | **Today command** | Jump to — or scaffold — today's `@day` entry (`Ctrl+Shift+P` → `Nutrition: Today`) |
 | **Document formatting** | Auto-indentation and consistent block spacing (`Shift+Alt+F`) |
+
+`Find Ingredient`, `Find Food`, and `Find Recipe` support both inline aliases and newline-delimited alias headers.
 
 ### Installation
 

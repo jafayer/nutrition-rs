@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Nutrition Tracker{% endblock %}</title>
+  <link rel="stylesheet" href="/partials/common.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+<nav>
+  <div class="nav-brand">🥗 Nutrition</div>
+  <div class="nav-links">
+    <a href="/" {% if active == "home" %}class="active"{% endif %}>Today</a>
+    <a href="/calendar" {% if active == "calendar" %}class="active"{% endif %}>Calendar</a>
+    <a href="/query" {% if active == "query" %}class="active"{% endif %}>Search</a>
+    <a href="/ingredients/new" class="cta{% if active == "new_ingredient" %} active{% endif %}">+ Food</a>
+    <a href="/recipes/new" class="cta{% if active == "new_recipe" %} active{% endif %}">+ Recipe</a>
+    <a href="/exercises/new" class="cta{% if active == "new_exercise" %} active{% endif %}">+ Exercise</a>
+  </div>
+</nav>
+<main>
+{% block content %}{% endblock %}
+</main>
+<script src="/partials/common.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -3,7 +3,7 @@
 use nutrition_rs::ast::ast::{Ate, Day, DayItem, Document, Exercise, Exercised, Ingredient, IngredientLabel, Item, Property, Quantity, Recipe};
 use nutrition_rs::nutrition::{
     aggregate_reports, compute_daily_report, compute_ingredient_nutrition, compute_recipe_nutrition,
-    compute_report, query_nutrition,
+    compute_report, compute_trace_report, query_nutrition,
 };
 
 // ---------------------------------------------------------------------------
@@ -243,6 +243,14 @@ fn query_nutrition_unknown_alias_returns_error() {
     assert!(query_nutrition(&doc, "nope", None).is_err());
 }
 
+#[test]
+fn query_nutrition_matches_alias_case_insensitively() {
+    let ing = make_ingredient("ChickPeas", 100.0, "g", vec![("calories", 269.0, Some("kcal"))]);
+    let doc = make_document(vec![Item::Ingredient(ing)]);
+    let report = query_nutrition(&doc, "chickpeas", None).unwrap();
+    assert_eq!(report.name, "ChickPeas");
+}
+
 // ---------------------------------------------------------------------------
 // Daily report computation
 // ---------------------------------------------------------------------------
@@ -288,6 +296,43 @@ fn daily_report_sums_ate_intake() {
     assert!(report.exercise.is_empty());
     let net_cal = report.net.iter().find(|p| p.name == "calories").unwrap();
     assert!((net_cal.value.amount - 538.0).abs() < 1e-6);
+}
+
+#[test]
+fn daily_report_scales_recipe_servings_by_declared_yield() {
+    let flour = make_ingredient("flour", 100.0, "g", vec![("calories", 364.0, Some("kcal"))]);
+    let milk = make_ingredient("milk", 100.0, "g", vec![("calories", 42.0, Some("kcal"))]);
+    let recipe = Recipe {
+        aliases: vec!["pancakes".to_string()],
+        quantities: vec![Quantity { amount: 4.0, unit: None }],
+        ingredients: vec![
+            IngredientLabel {
+                alias: "flour".to_string(),
+                quantity: Quantity { amount: 200.0, unit: Some("g".to_string()) },
+            },
+            IngredientLabel {
+                alias: "milk".to_string(),
+                quantity: Quantity { amount: 300.0, unit: Some("g".to_string()) },
+            },
+        ],
+    };
+    let day = Day {
+        date: "2026-01-02".to_string(),
+        items: vec![DayItem::Ate(Ate {
+            food_alias: "pancakes".to_string(),
+            quantity: Quantity { amount: 2.0, unit: None },
+        })],
+    };
+    let doc = make_document(vec![
+        Item::Ingredient(flour),
+        Item::Ingredient(milk),
+        Item::Recipe(recipe),
+        Item::Day(day.clone()),
+    ]);
+
+    let report = compute_daily_report(&doc, &day);
+    let intake_cal = report.intake.iter().find(|p| p.name == "calories").unwrap();
+    assert!((intake_cal.value.amount - 427.0).abs() < 1e-6);
 }
 
 #[test]
@@ -393,6 +438,34 @@ fn daily_report_unknown_food_skipped_gracefully() {
     let report = compute_daily_report(&doc, &day);
     assert!(report.intake.is_empty());
     assert!(report.exercise.is_empty());
+}
+
+#[test]
+fn daily_report_resolves_ate_and_exercised_case_insensitively() {
+    let ing = make_ingredient("Rice", 100.0, "g", vec![("calories", 130.0, Some("kcal"))]);
+    let ex = make_exercise("Running", 30.0, "min", vec![("calories", 200.0, Some("kcal"))]);
+    let day = Day {
+        date: "2026-06-01".to_string(),
+        items: vec![
+            DayItem::Ate(Ate {
+                food_alias: "rIcE".to_string(),
+                quantity: Quantity { amount: 100.0, unit: Some("g".to_string()) },
+            }),
+            DayItem::Exercised(Exercised {
+                exercise_alias: "RUNNING".to_string(),
+                quantity: Quantity { amount: 30.0, unit: Some("min".to_string()) },
+            }),
+        ],
+    };
+
+    let doc = make_document(vec![Item::Ingredient(ing), Item::Exercise(ex), Item::Day(day.clone())]);
+    let report = compute_daily_report(&doc, &day);
+
+    let intake_cal = report.intake.iter().find(|p| p.name == "calories").unwrap();
+    assert!((intake_cal.value.amount - 130.0).abs() < 1e-6);
+
+    let ex_cal = report.exercise.iter().find(|p| p.name == "calories").unwrap();
+    assert!((ex_cal.value.amount - 200.0).abs() < 1e-6);
 }
 
 // ---------------------------------------------------------------------------
@@ -543,4 +616,51 @@ fn aggregate_reports_subtracts_exercise_in_net() {
     let net_cal = agg.net.iter().find(|p| p.name == "calories").unwrap();
     // Each day: 300 - 100 = 200; average = 200
     assert!((net_cal.value.amount - 200.0).abs() < 1e-6);
+}
+
+#[test]
+fn trace_report_includes_recipe_children() {
+    let flour = make_ingredient("flour", 100.0, "g", vec![("calories", 364.0, Some("kcal"))]);
+    let recipe = Recipe {
+        aliases: vec!["bread".to_string()],
+        quantities: vec![Quantity { amount: 1.0, unit: None }],
+        ingredients: vec![IngredientLabel {
+            alias: "flour".to_string(),
+            quantity: Quantity { amount: 100.0, unit: Some("g".to_string()) },
+        }],
+    };
+    let day = Day {
+        date: "2026-07-01".to_string(),
+        items: vec![DayItem::Ate(Ate {
+            food_alias: "bread".to_string(),
+            quantity: Quantity { amount: 1.0, unit: None },
+        })],
+    };
+    let doc = make_document(vec![Item::Ingredient(flour), Item::Recipe(recipe), Item::Day(day)]);
+
+    let traces = compute_trace_report(&doc, Some("2026-07-01"), Some("2026-07-01"));
+    assert_eq!(traces.len(), 1);
+    assert_eq!(traces[0].intake_entries.len(), 1);
+    let root = &traces[0].intake_entries[0];
+    assert_eq!(root.kind, "recipe");
+    assert_eq!(root.children.len(), 1);
+    assert_eq!(root.children[0].alias, "flour");
+    assert_eq!(root.children[0].kind, "ingredient");
+}
+
+#[test]
+fn trace_report_marks_unresolved_ate_alias() {
+    let day = Day {
+        date: "2026-07-02".to_string(),
+        items: vec![DayItem::Ate(Ate {
+            food_alias: "missing food".to_string(),
+            quantity: Quantity { amount: 1.0, unit: None },
+        })],
+    };
+    let doc = make_document(vec![Item::Day(day)]);
+
+    let traces = compute_trace_report(&doc, Some("2026-07-02"), Some("2026-07-02"));
+    assert_eq!(traces.len(), 1);
+    assert_eq!(traces[0].intake_entries.len(), 1);
+    assert_eq!(traces[0].intake_entries[0].kind, "unresolved");
 }

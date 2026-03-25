@@ -1,8 +1,10 @@
 pub mod env;
 pub mod file_loader;
 pub mod generate;
+pub mod validate;
 
 use clap::Parser;
+use chrono::Local;
 
 pub use env::DEFAULT_FILE_ENV_VAR;
 
@@ -53,6 +55,14 @@ pub enum Commands {
             default_value_t = 8080
         )]
         port: u16,
+
+        #[arg(
+            short = 'H',
+            long,
+            help = "Host to bind to",
+            default_value = "127.0.0.1"
+        )]
+        host: String
     },
 
     /// Display nutritional data for a named ingredient or recipe.
@@ -73,6 +83,9 @@ pub enum Commands {
 
     /// Compute daily nutrition reports from @day blocks.
     Report {
+        #[arg(help = "Optional date (e.g. '2026-01-01')")]
+        date: Option<String>,
+
         #[arg(
             long,
             help = "Start date filter, inclusive (e.g. '2026-01-01'). Defaults to today."
@@ -100,6 +113,12 @@ pub enum Commands {
 
         #[arg(long, help = "Output raw JSON instead of the nutrition-label display")]
         json: bool,
+
+        #[arg(
+            long,
+            help = "Show per-entry nutrition trace tree (source contributions) instead of standard report"
+        )]
+        trace: bool,
     }
 }
 
@@ -123,53 +142,52 @@ pub fn print_document(node: crate::ast::ast::Document) {
     println!("{:#?}", node);
 }
 
-/// Return a declaration-specific help message for ariadne's `with_help`.
-pub fn help_for_kind(kind: &str) -> &'static str {
-    match kind {
-        "@day" => {
-            "@day blocks may only contain `@ate`, `@exercised`, and `[MealLabel]` entries"
-        }
-        "@ingredient" | "@food" => {
-            "ingredients must have at least one quantity, one alias, and a `{ property: value }` body"
-        }
-        "@recipe" => {
-            "recipes must have at least one quantity, one alias, and a body with `\"alias\"(quantity)` entries"
-        }
-        "@exercise" => {
-            "exercises must have at least one quantity, one alias, and a `{ property: value }` body"
-        }
-        _ => "check that all required fields are present and the block is closed with `}`",
+/// Return the current local date as a `YYYY-MM-DD` string.
+pub fn current_date_iso8601() -> String {
+    Local::now().format("%Y-%m-%d").to_string()
+}
+
+#[derive(Debug, Clone)]
+enum ReportMode {
+    Single { date: String },
+    Range { start: String, end: String },
+}
+
+fn normalize_report_date(raw: Option<&str>, today: &str) -> String {
+    match raw {
+        Some("today") | None => today.to_string(),
+        Some(value) => value.to_string(),
     }
 }
 
-/// Return the current UTC date as a `YYYY-MM-DD` string using only the
-/// standard library (no external date crates required).
-///
-/// Note: this uses UTC time, so the date may differ from the local wall-clock
-/// date near midnight depending on the system's timezone offset.
-pub fn current_date_iso8601() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+fn resolve_report_mode(
+    date: Option<&str>,
+    start: Option<&str>,
+    end: Option<&str>,
+    today: &str,
+) -> Result<ReportMode, String> {
+    if date.is_some() && (start.is_some() || end.is_some()) {
+        return Err(
+            "`report [date]` cannot be combined with `--start`/`--end`; use either single-day mode or range mode".to_string(),
+        );
+    }
 
-    // Days since epoch.
-    let days = secs / 86400;
+    if let Some(single_date) = date {
+        return Ok(ReportMode::Single {
+            date: normalize_report_date(Some(single_date), today),
+        });
+    }
 
-    // Algorithm from http://howardhinnant.github.io/date_algorithms.html#civil_from_days
-    let z = days as i64 + 719468;
-    let era = if z >= 0 { z } else { z - 146096 } / 146097;
-    let doe = z - era * 146097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
+    if start.is_some() || end.is_some() {
+        return Ok(ReportMode::Range {
+            start: normalize_report_date(start, today),
+            end: normalize_report_date(end, today),
+        });
+    }
 
-    format!("{:04}-{:02}-{:02}", y, m, d)
+    Ok(ReportMode::Single {
+        date: today.to_string(),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -181,90 +199,26 @@ pub fn current_date_iso8601() -> String {
 /// require an async runtime.
 #[cfg(feature = "runtime")]
 pub async fn run_cli(cli: Cli) {
-    use ariadne::{Color, Label, Report, ReportKind, Source};
     use crate::ast::ast::Quantity;
-    use crate::display::{format_aggregated_report, format_daily_report, format_nutrition_report};
-    use crate::nutrition::{aggregate_reports, compute_report, query_nutrition, NutritionReport};
+    use crate::display::{
+        format_aggregated_report,
+        format_daily_report,
+        format_daily_trace_report,
+        format_nutrition_report,
+    };
+    use crate::nutrition::{
+        aggregate_reports,
+        compute_report,
+        compute_trace_report,
+        query_nutrition,
+        NutritionReport,
+    };
 
     match cli.command {
         Commands::Validate { show_tree } => {
             let file = require_file(&cli.file);
-            let (source, document, diagnostics) =
-                match file_loader::load_source_with_diagnostics(&file) {
-                    Ok(result) => result,
-                    Err(e) => {
-                        eprintln!("error: {}", e);
-                        std::process::exit(1);
-                    }
-                };
-
-            for diag in &diagnostics {
-                let mut report =
-                    Report::build(ReportKind::Error, file.as_str(), diag.byte_span.start)
-                        .with_message(&diag.message)
-                        .with_label(
-                            Label::new((file.as_str(), diag.byte_span.clone()))
-                                .with_message(format!(
-                                    "this {} could not be parsed",
-                                    diag.declaration_kind
-                                ))
-                                .with_color(Color::Red),
-                        );
-
-                if let (Some(note_span), Some(note_msg)) =
-                    (&diag.note_span, &diag.note_message)
-                {
-                    report = report.with_label(
-                        Label::new((file.as_str(), note_span.clone()))
-                            .with_message(note_msg)
-                            .with_color(Color::Yellow),
-                    );
-                }
-
-                report
-                    .with_help(help_for_kind(diag.declaration_kind))
-                    .finish()
-                    .eprint((file.as_str(), Source::from(&source)))
-                    .unwrap();
-            }
-
-            match document {
-                Some(doc) if diagnostics.is_empty() => {
-                    let item_count = doc
-                        .items
-                        .iter()
-                        .filter(|i| {
-                            !matches!(i, crate::ast::ast::Item::Comment(_))
-                        })
-                        .count();
-                    println!("✓ '{}' is valid ({} item(s)).", file, item_count);
-                    if show_tree {
-                        print_document(doc);
-                    }
-                }
-                Some(doc) => {
-                    let recovered = doc
-                        .items
-                        .iter()
-                        .filter(|i| {
-                            !matches!(i, crate::ast::ast::Item::Comment(_))
-                        })
-                        .count();
-                    eprintln!(
-                        "✗ '{}' has {} parse error(s); {} item(s) recovered.",
-                        file,
-                        diagnostics.len(),
-                        recovered,
-                    );
-                    if show_tree {
-                        print_document(doc);
-                    }
-                    std::process::exit(1);
-                }
-                None => {
-                    eprintln!("✗ '{}' could not be parsed.", file);
-                    std::process::exit(1);
-                }
+            if let Err(code) = validate::run_validate(&file, show_tree) {
+                std::process::exit(code);
             }
         }
 
@@ -285,8 +239,9 @@ pub async fn run_cli(cli: Cli) {
             }
         },
 
-        Commands::Serve { port } => {
-            crate::web_server::handler::run_server(port).await.unwrap();
+        Commands::Serve { port, host } => {
+            let file = require_file(&cli.file);
+            crate::web_server::handler::run_server(host, port, file).await.unwrap();
         }
 
         Commands::Query { name, quantity, json } => {
@@ -323,7 +278,7 @@ pub async fn run_cli(cli: Cli) {
             }
         }
 
-        Commands::Report { start, end, ate_only, no_aggregate, json } => {
+        Commands::Report { date, start, end, ate_only, no_aggregate, json, trace } => {
             let file = require_file(&cli.file);
             let document = match file_loader::load_tree(Some(&file)) {
                 Ok(doc) => doc,
@@ -334,24 +289,68 @@ pub async fn run_cli(cli: Cli) {
             };
 
             let today = current_date_iso8601();
-            let start_resolved = start
-                .as_deref()
-                .map(|s| if s == "today" { today.as_str() } else { s })
-                .unwrap_or(today.as_str());
-            let end_resolved = end
-                .as_deref()
-                .map(|e| if e == "today" { today.as_str() } else { e })
-                .unwrap_or(today.as_str());
+            let report_mode = match resolve_report_mode(
+                date.as_deref(),
+                start.as_deref(),
+                end.as_deref(),
+                &today,
+            ) {
+                Ok(mode) => mode,
+                Err(message) => {
+                    eprintln!("Report options error: {}", message);
+                    std::process::exit(1);
+                }
+            };
+
+            let (start_resolved, end_resolved) = match &report_mode {
+                ReportMode::Single { date } => (date.as_str(), date.as_str()),
+                ReportMode::Range { start, end } => (start.as_str(), end.as_str()),
+            };
+
+            if trace {
+                let traces = compute_trace_report(&document, Some(start_resolved), Some(end_resolved));
+                if traces.is_empty() {
+                    match report_mode {
+                        ReportMode::Single { .. } => {
+                            println!("No @day entry found for the specified date.");
+                        }
+                        ReportMode::Range { .. } => {
+                            println!("No @day entries found in the specified range.");
+                        }
+                    }
+                    return;
+                }
+
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&traces).unwrap_or_default());
+                } else {
+                    for (idx, trace_report) in traces.iter().enumerate() {
+                        if idx > 0 {
+                            println!();
+                        }
+                        println!("{}", format_daily_trace_report(trace_report));
+                    }
+                }
+                return;
+            }
 
             let reports = compute_report(&document, Some(start_resolved), Some(end_resolved));
 
             if reports.is_empty() {
-                println!("No @day entries found in the specified range.");
+                match report_mode {
+                    ReportMode::Single { .. } => {
+                        println!("No @day entry found for the specified date.");
+                    }
+                    ReportMode::Range { .. } => {
+                        println!("No @day entries found in the specified range.");
+                    }
+                }
                 return;
             }
 
-            let is_range = start_resolved != end_resolved;
-            let use_aggregate = is_range && !no_aggregate;
+            let use_aggregate = matches!(report_mode, ReportMode::Range { .. })
+                && start_resolved != end_resolved
+                && !no_aggregate;
 
             if use_aggregate {
                 let agg = aggregate_reports(&reports, start_resolved, end_resolved);
@@ -403,5 +402,52 @@ pub async fn run_cli(cli: Cli) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{resolve_report_mode, ReportMode};
+
+    #[test]
+    fn report_mode_defaults_to_single_today() {
+        let mode = resolve_report_mode(None, None, None, "2026-02-26").unwrap();
+        match mode {
+            ReportMode::Single { date } => assert_eq!(date, "2026-02-26"),
+            other => panic!("expected single mode, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn report_mode_uses_positional_date() {
+        let mode = resolve_report_mode(Some("2026-01-07"), None, None, "2026-02-26").unwrap();
+        match mode {
+            ReportMode::Single { date } => assert_eq!(date, "2026-01-07"),
+            other => panic!("expected single mode, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn report_mode_supports_range_with_partial_bounds() {
+        let mode = resolve_report_mode(None, Some("2026-01-01"), None, "2026-02-26").unwrap();
+        match mode {
+            ReportMode::Range { start, end } => {
+                assert_eq!(start, "2026-01-01");
+                assert_eq!(end, "2026-02-26");
+            }
+            other => panic!("expected range mode, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn report_mode_rejects_mixing_date_and_range_flags() {
+        let error = resolve_report_mode(
+            Some("2026-01-07"),
+            Some("2026-01-01"),
+            Some("2026-01-31"),
+            "2026-02-26",
+        )
+        .expect_err("expected conflict error");
+        assert!(error.contains("cannot be combined"));
     }
 }

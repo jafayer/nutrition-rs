@@ -146,6 +146,8 @@ impl UnitRegistry {
         reg.add_conversion("l", "mL", 1_000.0);
         reg.add_conversion("cup", "mL", 236.588);
         reg.add_conversion("cups", "mL", 236.588);
+        reg.add_conversion("fl_oz", "mL", 29.5735);
+        reg.add_conversion("floz", "mL", 29.5735);
         reg.add_conversion("tbsp", "mL", 14.7868);
         reg.add_conversion("tsp", "mL", 4.92892);
 

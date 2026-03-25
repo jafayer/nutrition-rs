@@ -44,8 +44,12 @@ impl CanEmit<Day> for DayEmitter {
                 }
 
                 
-                DayItem::Meal(_meal_label) => {
-                    // TODO: support ordered meal labels
+                DayItem::Meal(meal_label) => {
+                    output.push('\n');
+                    output.push_str("    ");
+                    output.push('[');
+                    output.push_str(meal_label);
+                    output.push(']');
                 }
             }
         }

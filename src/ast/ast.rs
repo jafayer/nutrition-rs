@@ -8,6 +8,7 @@ pub struct Document {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Item {
+    Import(String),
     Property(Property),
     Ingredient(Ingredient),
     // Food(Food),
@@ -440,9 +441,9 @@ impl Day {
                     result.push_str(")\n");
                 }
                 DayItem::Meal(meal_label) => {
-                    result.push_str("    \"");
+                    result.push_str("    [");
                     result.push_str(meal_label);
-                    result.push_str("\"\n");
+                    result.push_str("]\n");
                 }
             }
         }

@@ -7,7 +7,13 @@
 //! Pass `--json` on the CLI to skip this display and emit raw JSON instead.
 
 use crate::ast::ast::Property;
-use crate::nutrition::{AggregatedReport, DailyNutritionReport, NutritionReport};
+use crate::nutrition::{
+    AggregatedReport,
+    DailyNutritionReport,
+    DailyNutritionTraceReport,
+    NutritionReport,
+    NutritionTraceNode,
+};
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 
@@ -272,6 +278,86 @@ pub fn format_aggregated_report(report: &AggregatedReport) -> String {
     }
 
     lines.push(bottom_border());
+    lines.join("\n")
+}
+
+fn qty_to_string(q: &crate::ast::ast::Quantity) -> String {
+    match &q.unit {
+        Some(u) => format!("{} {}", fmt_amount(q.amount), u),
+        None => fmt_amount(q.amount),
+    }
+}
+
+fn trace_node_lines(node: &NutritionTraceNode, prefix: &str, is_last: bool, out: &mut Vec<String>) {
+    let branch = if is_last { "└─" } else { "├─" };
+    out.push(format!(
+        "{}{} {} [{}] ({})",
+        prefix,
+        branch,
+        node.alias,
+        node.kind,
+        qty_to_string(&node.quantity)
+    ));
+
+    let child_prefix = if is_last {
+        format!("{}   ", prefix)
+    } else {
+        format!("{}│  ", prefix)
+    };
+
+    for prop in sorted_props(&node.properties) {
+        let unit_str = prop.value.unit.as_deref().unwrap_or("");
+        let value_str = if unit_str.is_empty() {
+            fmt_amount(prop.value.amount)
+        } else {
+            format!("{} {}", fmt_amount(prop.value.amount), unit_str)
+        };
+        out.push(format!("{}• {}: {}", child_prefix, prop.name, value_str));
+    }
+
+    for (idx, child) in node.children.iter().enumerate() {
+        trace_node_lines(child, &child_prefix, idx + 1 == node.children.len(), out);
+    }
+}
+
+/// Render a daily nutrition trace report as a source tree.
+pub fn format_daily_trace_report(report: &DailyNutritionTraceReport) -> String {
+    let mut lines = Vec::new();
+    lines.push(format!("Daily Nutrition Trace: {}", report.date));
+
+    lines.push("Intake".to_string());
+    if report.intake_entries.is_empty() {
+        lines.push("└─ (none)".to_string());
+    } else {
+        for (idx, node) in report.intake_entries.iter().enumerate() {
+            trace_node_lines(node, "", idx + 1 == report.intake_entries.len(), &mut lines);
+        }
+    }
+
+    lines.push("Exercise".to_string());
+    if report.exercise_entries.is_empty() {
+        lines.push("└─ (none)".to_string());
+    } else {
+        for (idx, node) in report.exercise_entries.iter().enumerate() {
+            trace_node_lines(node, "", idx + 1 == report.exercise_entries.len(), &mut lines);
+        }
+    }
+
+    lines.push("Net".to_string());
+    if report.net.is_empty() {
+        lines.push("└─ (none)".to_string());
+    } else {
+        for prop in sorted_props(&report.net) {
+            let unit_str = prop.value.unit.as_deref().unwrap_or("");
+            let value_str = if unit_str.is_empty() {
+                fmt_amount(prop.value.amount)
+            } else {
+                format!("{} {}", fmt_amount(prop.value.amount), unit_str)
+            };
+            lines.push(format!("└─ {}: {}", prop.name, value_str));
+        }
+    }
+
     lines.join("\n")
 }
 

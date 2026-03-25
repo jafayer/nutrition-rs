@@ -1,0 +1,190 @@
+{% extends "base.html" %} {% block title %}New Exercise - Nutrition Tracker{%
+endblock %} {% block content %}
+<h1>🏋️ New Exercise</h1>
+<p style="color: var(--text-dim); margin-bottom: 1rem">
+  Define a new exercise type with calories burned per duration.
+</p>
+
+<div class="card">
+  <form id="ex-form">
+    <div>
+      <div class="section-title"><h3>Exercise Name(s)</h3></div>
+      <div class="repeatable-list" id="aliases-list">
+        <div class="repeatable-item">
+          <input type="text" placeholder="e.g. running" required />
+          <button type="button" class="secondary remove-btn" title="Remove">
+            ✕
+          </button>
+        </div>
+      </div>
+      <button
+        type="button"
+        class="secondary"
+        id="add-alias"
+        style="margin-top: 0.5rem"
+      >
+        + Add alias
+      </button>
+    </div>
+
+    <div>
+      <div class="section-title"><h3>Reference Duration</h3></div>
+      <p
+        style="
+          color: var(--text-dim);
+          font-size: 0.85rem;
+          margin-bottom: 0.5rem;
+        "
+      >
+        e.g. "30 min" or "1 hour"
+      </p>
+      <div class="repeatable-list" id="quantities-list">
+        <div class="repeatable-item">
+          <input type="text" placeholder="e.g. 30 min" required />
+          <button type="button" class="secondary remove-btn" title="Remove">
+            ✕
+          </button>
+        </div>
+      </div>
+      <button
+        type="button"
+        class="secondary"
+        id="add-quantity"
+        style="margin-top: 0.5rem"
+      >
+        + Add duration
+      </button>
+    </div>
+
+    <div>
+      <div class="section-title">
+        <h3>Properties (calories burned, etc.)</h3>
+      </div>
+      <p
+        style="
+          color: var(--text-dim);
+          font-size: 0.85rem;
+          margin-bottom: 0.5rem;
+        "
+      >
+        e.g. calories: 300kcal (per reference duration above)
+      </p>
+      <div class="repeatable-list" id="props-list">
+        <div class="repeatable-item">
+          <input
+            type="text"
+            placeholder="Property (e.g. calories)"
+            style="flex: 1.2"
+          />
+          <input
+            type="text"
+            placeholder="Value (e.g. 300kcal)"
+            style="flex: 1"
+          />
+          <button type="button" class="secondary remove-btn" title="Remove">
+            ✕
+          </button>
+        </div>
+      </div>
+      <button
+        type="button"
+        class="secondary"
+        id="add-prop"
+        style="margin-top: 0.5rem"
+      >
+        + Add property
+      </button>
+    </div>
+
+    <div id="form-msg"></div>
+    <button type="submit" style="align-self: flex-start">Save Exercise</button>
+  </form>
+</div>
+{% endblock %} {% block scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    addRemoveHandlers();
+
+  document.getElementById("add-alias").onclick = () => {
+    const item = document.createElement("div");
+    item.className = "repeatable-item";
+    item.innerHTML =
+      '<input type="text" placeholder="e.g. jogging"><button type="button" class="secondary remove-btn" title="Remove">✕</button>';
+    document.getElementById("aliases-list").appendChild(item);
+    addRemoveHandlers();
+  };
+  document.getElementById("add-quantity").onclick = () => {
+    const item = document.createElement("div");
+    item.className = "repeatable-item";
+    item.innerHTML =
+      '<input type="text" placeholder="e.g. 1 hour"><button type="button" class="secondary remove-btn" title="Remove">✕</button>';
+    document.getElementById("quantities-list").appendChild(item);
+    addRemoveHandlers();
+  };
+  document.getElementById("add-prop").onclick = () => {
+    const item = document.createElement("div");
+    item.className = "repeatable-item";
+    item.innerHTML =
+      '<input type="text" placeholder="Property (e.g. calories)" style="flex:1.2"><input type="text" placeholder="Value (e.g. 250kcal)" style="flex:1"><button type="button" class="secondary remove-btn" title="Remove">✕</button>';
+    document.getElementById("props-list").appendChild(item);
+    addRemoveHandlers();
+  };
+
+  document.getElementById("ex-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const msgEl = document.getElementById("form-msg");
+
+    const aliases = [
+      ...document.getElementById("aliases-list").querySelectorAll("input"),
+    ]
+      .map((i) => i.value.trim())
+      .filter(Boolean);
+    const quantities = [
+      ...document.getElementById("quantities-list").querySelectorAll("input"),
+    ]
+      .map((i) => parseQuantityStr(i.value))
+      .filter(Boolean);
+
+    const propItems = [
+      ...document
+        .getElementById("props-list")
+        .querySelectorAll(".repeatable-item"),
+    ];
+    const properties = propItems
+      .map((item) => {
+        const inputs = item.querySelectorAll("input");
+        const name = inputs[0].value.trim();
+        const val = parseQuantityStr(inputs[1].value);
+        if (!name || !val) return null;
+        return { name, value: val };
+      })
+      .filter(Boolean);
+
+    if (aliases.length === 0) {
+      msgEl.innerHTML =
+        '<div class="alert alert-error">At least one name is required.</div>';
+      return;
+    }
+    if (quantities.length === 0) {
+      msgEl.innerHTML =
+        '<div class="alert alert-error">At least one duration is required.</div>';
+      return;
+    }
+
+    const body = { aliases, quantities, properties };
+    const res = await fetch("/api/exercises", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      msgEl.innerHTML = `<div class="alert alert-success">✓ Exercise "${aliases[0]}" saved! <a href="/">Log exercise</a></div>`;
+      e.target.reset();
+    } else {
+      const err = await res.json();
+      msgEl.innerHTML = `<div class="alert alert-error">${err.error || "Error saving exercise"}</div>`;
+    }
+  });
+  });
+</script>
+{% endblock %}

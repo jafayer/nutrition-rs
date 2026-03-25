@@ -1,0 +1,31 @@
+@ingredient(126g) "Applesauce by Giant Eagle" {
+    calories: 71kcal
+    protein: 0g
+    carbohydrates: 18.2g
+    fat: 0g
+    sugar: 15.9g
+    dietary_fiber: 0.8g
+    sodium: 8mg
+}
+
+
+@ingredient(1oz)(28g) "Korean Bbq Popcorn by Shoprite" {
+    calories: 393kcal
+    protein: 10.7g
+    carbohydrates: 67.9g
+    fat: 14.3g
+    sugar: 7.14g
+    dietary_fiber: 17.9g
+    sodium: 536mg
+}
+
+
+@ingredient(156g) "Sriracha Chili Wrapped, White Meat Chicken Egg Rolls by Chung's" {
+    calories: 173kcal
+    protein: 5.77g
+    carbohydrates: 28.8g
+    fat: 4.49g
+    sugar: 7.69g
+    dietary_fiber: 1.9g
+    sodium: 455mg
+}

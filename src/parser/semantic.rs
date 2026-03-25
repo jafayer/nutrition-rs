@@ -1,6 +1,10 @@
 use crate::ast::ast::*;
 use std::collections::HashMap;
 
+fn normalize_label(label: &str) -> String {
+    label.trim().to_lowercase()
+}
+
 /// Semantic analyzer that indexes a parsed [`Document`] for alias-based lookups
 /// and optional nutritional calculations.
 pub struct SemanticAnalyzer {
@@ -31,17 +35,17 @@ impl SemanticAnalyzer {
             match item {
                 Item::Ingredient(ing) => {
                     for alias in &ing.aliases {
-                        self.ingredients.insert(alias.clone(), ing.clone());
+                        self.ingredients.insert(normalize_label(alias), ing.clone());
                     }
                 }
                 Item::Recipe(rec) => {
                     for alias in &rec.aliases {
-                        self.recipes.insert(alias.clone(), rec.clone());
+                        self.recipes.insert(normalize_label(alias), rec.clone());
                     }
                 }
                 Item::Exercise(ex) => {
                     for alias in &ex.aliases {
-                        self.exercises.insert(alias.clone(), ex.clone());
+                        self.exercises.insert(normalize_label(alias), ex.clone());
                     }
                 }
                 Item::Day(day) => {
@@ -55,17 +59,17 @@ impl SemanticAnalyzer {
 
     /// Get a resolved ingredient by alias
     pub fn get_ingredient(&self, alias: &str) -> Option<&Ingredient> {
-        self.ingredients.get(alias)
+        self.ingredients.get(&normalize_label(alias))
     }
 
     /// Get a resolved recipe by alias
     pub fn get_recipe(&self, alias: &str) -> Option<&Recipe> {
-        self.recipes.get(alias)
+        self.recipes.get(&normalize_label(alias))
     }
 
     /// Get a resolved exercise by alias
     pub fn get_exercise(&self, alias: &str) -> Option<&Exercise> {
-        self.exercises.get(alias)
+        self.exercises.get(&normalize_label(alias))
     }
 
     /// Calculate nutritional properties for a recipe by resolving ingredient

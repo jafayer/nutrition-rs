@@ -5,7 +5,8 @@ Language support for `.nutrition` files with client-side features.
 ## Features
 
 - Syntax highlighting for `.nutrition` files
-- Find commands for ingredients, foods, recipes, and days
+- Clickable `!import "..."` paths for quick file navigation
+- Find commands for ingredients, foods, recipes, and days across the current file and imported files
 - Today command to jump to or create today's entry
 - Document formatting with auto-indentation and block spacing
 

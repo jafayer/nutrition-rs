@@ -5,6 +5,9 @@ fn print_document(doc: &Document, indent: usize) {
     let pad = " ".repeat(indent);
     for item in &doc.items {
         match item {
+            Item::Import(path) => {
+                println!("{}Import: {}", pad, path);
+            }
             Item::Ingredient(ing) => {
                 println!("{}Ingredient: {:?}", pad, ing.aliases);
                 println!("{}  quantities: {:?}", pad, ing.quantities);
