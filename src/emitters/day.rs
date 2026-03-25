@@ -61,3 +61,31 @@ impl CanEmit<Day> for DayEmitter {
         output
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::ast::{Ate, Exercised, Quantity};
+
+    #[test]
+    fn test_day_emitter() {
+        let day = Day {
+            date: "2024-06-01".to_string(),
+            items: vec![
+                DayItem::Meal("Breakfast".to_string()),
+                DayItem::Ate(Ate { food_alias: "Oatmeal".to_string(), quantity: Quantity { amount: 100.0, unit: Some("grams".to_string()) } }),
+                DayItem::Exercised(Exercised { exercise_alias: "Running".to_string(), quantity: Quantity { amount: 30.0, unit: Some("minutes".to_string()) } }),
+            ],
+        };
+
+        let emitter = DayEmitter;
+        let emitted = emitter.emit(&day);
+        let expected = r#"@day "2024-06-01" {
+    [Breakfast]
+    @ate "Oatmeal"(100grams)
+    @exercised "Running"(30minutes)
+}
+"#;
+        assert_eq!(emitted, expected);
+    }
+}
