@@ -1,6 +1,7 @@
 pub mod env;
 pub mod file_loader;
 pub mod generate;
+pub mod track;
 pub mod validate;
 
 use clap::Parser;
@@ -80,6 +81,10 @@ pub enum Commands {
         #[arg(long, help = "Output raw JSON instead of the nutrition-label display")]
         json: bool,
     },
+
+    /// Track day items: append to or create the @day block for a date.
+    #[command(visible_aliases = ["t"])]
+    Track(track::TrackArgs),
 
     /// Compute daily nutrition reports from @day blocks.
     Report {
@@ -238,6 +243,24 @@ pub async fn run_cli(cli: Cli) {
                 println!("\n{}", output);
             }
         },
+
+        Commands::Track(args) => {
+            let file = require_file(&cli.file);
+            let today = current_date_iso8601();
+            let date = args.date.clone().unwrap_or(today);
+            let raw_args: Vec<String> = std::env::args().collect();
+            let items = match track::build_ordered_items(&raw_args) {
+                Ok(items) => items,
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(1);
+                }
+            };
+            if let Err(e) = track::run_track_on_file(&file, &date, &items) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
 
         Commands::Serve { port, host } => {
             let file = require_file(&cli.file);
