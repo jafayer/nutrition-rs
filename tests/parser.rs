@@ -2,6 +2,8 @@ use chumsky::Parser;
 use logos::Logos;
 
 use nutrition_rs::ast::ast::{DayItem, Document, Item, Quantity};
+use nutrition_rs::cli::file_loader::load_tree;
+use nutrition_rs::cli::validate::render_parse_diagnostics_to_stderr;
 use nutrition_rs::lexer::lexer::Token;
 use nutrition_rs::parser::parser::parser;
 
@@ -698,4 +700,157 @@ fn diagnostic_header_flags_comma_separated_aliases() {
         .expect("note_message should be set for header token");
     assert!(message.contains("header"), "expected header-focused note, got: {message}");
     assert!(message.contains("commas"), "expected comma guidance, got: {message}");
+}
+
+// ---------------------------------------------------------------------------
+// load_tree / file loading regression tests
+// ---------------------------------------------------------------------------
+
+/// `@unit` and `@property` are recognized by the lexer but not yet implemented
+/// in the parser. Any file containing them must still be loadable by `report`
+/// and `query`, which use `load_tree`. Previously, `load_tree` called `parse()`
+/// which required every token to be consumed, causing it to return `None` (and
+/// therefore an error) whenever the file contained unimplemented top-level
+/// keywords — even though `nutrition validate` succeeded for the same file.
+#[test]
+fn load_tree_succeeds_for_file_containing_unimplemented_at_unit_declarations() {
+    let source = r#"@ingredient(100g) "apple" {
+    calories: 52
+}
+
+@unit gram = g
+
+@day "2026-01-01" {
+    @ate "apple"(100g)
+}
+"#;
+
+    let path = std::env::temp_dir().join("test_load_tree_at_unit_regression.nutrition");
+    std::fs::write(&path, source).expect("failed to write temp file");
+
+    let result = load_tree(Some(path.to_str().unwrap()));
+    std::fs::remove_file(&path).ok();
+
+    assert!(
+        result.is_ok(),
+        "load_tree should succeed for a file containing @unit alongside valid items, got: {:?}",
+        result.err()
+    );
+
+    let doc = result.unwrap();
+    assert!(
+        doc.items.iter().any(|i| matches!(i, Item::Ingredient(_))),
+        "valid @ingredient should be present in the parsed document"
+    );
+    assert!(
+        doc.items.iter().any(|i| matches!(i, Item::Day(_))),
+        "valid @day should be present in the parsed document"
+    );
+}
+
+#[test]
+fn load_tree_succeeds_for_file_containing_unimplemented_at_property_declarations() {
+    let source = r#"@ingredient(100g) "banana" {
+    calories: 89
+}
+
+@property custom_macro = calories + protein
+
+@day "2026-02-01" {
+    @ate "banana"(100g)
+}
+"#;
+
+    let path = std::env::temp_dir().join("test_load_tree_at_property_regression.nutrition");
+    std::fs::write(&path, source).expect("failed to write temp file");
+
+    let result = load_tree(Some(path.to_str().unwrap()));
+    std::fs::remove_file(&path).ok();
+
+    assert!(
+        result.is_ok(),
+        "load_tree should succeed for a file containing @property alongside valid items, got: {:?}",
+        result.err()
+    );
+
+    let doc = result.unwrap();
+    assert!(
+        doc.items.iter().any(|i| matches!(i, Item::Ingredient(_))),
+        "valid @ingredient should be present in the parsed document"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Verbose error output tests
+// ---------------------------------------------------------------------------
+
+/// `load_source_with_diagnostics` must return at least one diagnostic when the
+/// file contains a declaration that cannot be parsed.  This diagnostic is what
+/// `report` and `query` should print to stderr so users get actionable feedback
+/// instead of the generic "Failed to parse input file" message.
+#[test]
+fn load_source_with_diagnostics_returns_diagnostics_for_malformed_declaration() {
+    let source = r#"@ingredient(100g) "good_apple" {
+    calories: 52
+}
+
+@ingredient(100g) "bad item" this is broken garbage text {
+
+@day "2026-03-01" {
+    @ate "good_apple"(100g)
+}
+"#;
+
+    let path = std::env::temp_dir().join("test_diagnostics_for_malformed.nutrition");
+    std::fs::write(&path, source).expect("failed to write temp file");
+
+    let result = nutrition_rs::cli::file_loader::load_source_with_diagnostics(path.to_str().unwrap());
+    std::fs::remove_file(&path).ok();
+
+    let (_, _, doc, diagnostics) = result.expect("file I/O must succeed");
+
+    assert!(
+        !diagnostics.is_empty(),
+        "expected at least one ParseDiagnostic for the malformed @ingredient"
+    );
+
+    // Valid items should still be present (error recovery must be in effect).
+    let doc = doc.expect("a partial document with the good items should still be produced");
+    assert!(
+        doc.items.iter().any(|i| matches!(i, Item::Ingredient(_))),
+        "the valid @ingredient should survive despite the malformed one"
+    );
+    assert!(
+        doc.items.iter().any(|i| matches!(i, Item::Day(_))),
+        "the @day entry should survive despite the malformed @ingredient"
+    );
+}
+
+/// `render_parse_diagnostics_to_stderr` must exist and must not panic when
+/// called with the diagnostics returned from a known-bad file.  This function
+/// is the shared rendering path that `report` and `query` use to surface
+/// parse errors in the same rich ariadne format that `validate` already uses.
+#[test]
+fn render_parse_diagnostics_to_stderr_does_not_panic_for_malformed_file() {
+    let source = r#"@ingredient(100g) "good" {
+    calories: 10
+}
+
+@ingredient(100g) "broken" THIS IS GARBAGE {
+
+"#;
+
+    let path = std::env::temp_dir().join("test_render_diagnostics.nutrition");
+    std::fs::write(&path, source).expect("failed to write temp file");
+    let file_str = path.to_str().unwrap().to_string();
+
+    let (src, source_map, _doc, diagnostics) =
+        nutrition_rs::cli::file_loader::load_source_with_diagnostics(&file_str)
+            .expect("file I/O must succeed");
+    std::fs::remove_file(&path).ok();
+
+    assert!(!diagnostics.is_empty(), "test setup: expected diagnostics for malformed file");
+
+    // Must not panic.
+    render_parse_diagnostics_to_stderr(&file_str, &src, &source_map, &diagnostics);
 }

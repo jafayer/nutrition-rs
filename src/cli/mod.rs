@@ -246,10 +246,20 @@ pub async fn run_cli(cli: Cli) {
 
         Commands::Query { name, quantity, json } => {
             let file = require_file(&cli.file);
-            let document = match file_loader::load_tree(Some(&file)) {
-                Ok(doc) => doc,
+            let (source, source_map, doc, diagnostics) = match file_loader::load_source_with_diagnostics(&file) {
+                Ok(result) => result,
                 Err(err) => {
                     eprintln!("Failed to load file '{}': {}", file, err);
+                    std::process::exit(1);
+                }
+            };
+            if !diagnostics.is_empty() {
+                validate::render_parse_diagnostics_to_stderr(&file, &source, &source_map, &diagnostics);
+            }
+            let document = match doc {
+                Some(d) => d,
+                None => {
+                    eprintln!("error: failed to parse '{}'", file);
                     std::process::exit(1);
                 }
             };
@@ -280,10 +290,20 @@ pub async fn run_cli(cli: Cli) {
 
         Commands::Report { date, start, end, ate_only, no_aggregate, json, trace } => {
             let file = require_file(&cli.file);
-            let document = match file_loader::load_tree(Some(&file)) {
-                Ok(doc) => doc,
+            let (source, source_map, doc, diagnostics) = match file_loader::load_source_with_diagnostics(&file) {
+                Ok(result) => result,
                 Err(err) => {
                     eprintln!("Failed to load file '{}': {}", file, err);
+                    std::process::exit(1);
+                }
+            };
+            if !diagnostics.is_empty() {
+                validate::render_parse_diagnostics_to_stderr(&file, &source, &source_map, &diagnostics);
+            }
+            let document = match doc {
+                Some(d) => d,
+                None => {
+                    eprintln!("error: failed to parse '{}'", file);
                     std::process::exit(1);
                 }
             };

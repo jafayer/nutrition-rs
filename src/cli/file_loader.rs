@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use crate::ast::ast::Document;
 use crate::lexer::lexer::Token;
-use crate::parser::parser::{parse, parse_with_diagnostics, parse_with_errors};
+use crate::parser::parser::{parse_with_diagnostics, parse_with_errors};
 use crate::cli::env::get_default_file_from_env;
 use logos::Logos;
 
@@ -211,7 +211,8 @@ pub fn load_tree(file_path: Option<&str>) -> Result<Document, String> {
     };
 
     let expanded = load_expanded_source(&path)?;
-    parse(&expanded.source).ok_or_else(|| format!("Failed to parse input file {}", path))
+    let (doc, _errors) = parse_with_errors(&expanded.source);
+    doc.ok_or_else(|| format!("Failed to parse input file {}", path))
 }
 
 /// Parse a file and return both the (possibly partial) [`Document`] and any

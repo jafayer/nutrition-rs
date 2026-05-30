@@ -281,17 +281,18 @@ fn validate_semantics(document: &Document, source: &str) -> Vec<SemanticDiagnost
     diagnostics
 }
 
-pub fn run_validate(file: &str, show_tree: bool) -> Result<(), i32> {
-    let (source, source_map, document, diagnostics) = match file_loader::load_source_with_diagnostics(file) {
-        Ok(result) => result,
-        Err(e) => {
-            eprintln!("error: {}", e);
-            return Err(1);
-        }
-    };
-
-    for diag in &diagnostics {
-        let header_span = clamp_span(&source, &diag.byte_span);
+/// Render parse diagnostics to stderr using ariadne, in the same rich format
+/// that `validate` produces.  Called by `report` and `query` so that any
+/// parse failures surface with file-and-line context rather than a bare
+/// "Failed to parse input file" message.
+pub fn render_parse_diagnostics_to_stderr(
+    file: &str,
+    source: &str,
+    source_map: &file_loader::ExpandedSourceMap,
+    diagnostics: &[crate::parser::parser::ParseDiagnostic],
+) {
+    for diag in diagnostics {
+        let header_span = clamp_span(source, &diag.byte_span);
 
         let mapped_header = source_map
             .map_generated_span(&header_span)
@@ -301,13 +302,13 @@ pub fn run_validate(file: &str, show_tree: bool) -> Result<(), i32> {
             });
         let mapped_source = source_map
             .source_for_file(&mapped_header.file)
-            .unwrap_or(&source);
+            .unwrap_or(source);
         let mapped_header_span = clamp_span(mapped_source, &mapped_header.span);
         let (mapped_header_line, mapped_header_col) =
             line_col_from_byte(mapped_source, mapped_header_span.start);
 
         let note_context = if let (Some(note_span), Some(note_msg)) = (&diag.note_span, &diag.note_message) {
-            let note_span = clamp_span(&source, note_span);
+            let note_span = clamp_span(source, note_span);
             let mapped_note = source_map
                 .map_generated_span(&note_span)
                 .unwrap_or(file_loader::OriginSpan {
@@ -362,6 +363,18 @@ pub fn run_validate(file: &str, show_tree: bool) -> Result<(), i32> {
             );
         }
     }
+}
+
+pub fn run_validate(file: &str, show_tree: bool) -> Result<(), i32> {
+    let (source, source_map, document, diagnostics) = match file_loader::load_source_with_diagnostics(file) {
+        Ok(result) => result,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            return Err(1);
+        }
+    };
+
+    render_parse_diagnostics_to_stderr(file, &source, &source_map, &diagnostics);
 
     match document {
         Some(doc) if diagnostics.is_empty() => {
