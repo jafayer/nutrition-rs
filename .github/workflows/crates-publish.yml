@@ -42,5 +42,5 @@ jobs:
           if curl -fsSL "$URL" >/dev/null 2>&1; then
             echo "${PKG} ${VER} already published, skipping"
           else
-            cargo publish -p "${PKG}" --token "${CARGO_REGISTRY_TOKEN}"
+            cargo publish -p "${PKG}"
           fi
